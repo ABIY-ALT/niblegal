@@ -67,6 +67,17 @@ export const NAVIGATION: NavItem[] = [
     ],
   },
   {
+    title: 'Litigation Management',
+    icon: <Gavel size={18} />,
+    roles: ALL_ROLES,
+    submenu: [
+      { title: 'Dashboard', href: '/litigation', roles: ['manager', 'legal_officer', 'admin_assistant'] },
+      { title: 'Active Cases', href: '/litigation/active', roles: ALL_ROLES },
+      { title: 'Court Schedule', href: '/litigation/schedule', roles: ALL_ROLES, badge: 'critical' },
+      { title: 'Case Archive', href: '/litigation/archive', roles: ['manager', 'admin_assistant'] },
+    ],
+  },
+  {
     title: 'Knowledge Center',
     icon: <BookOpen size={18} />,
     roles: ALL_ROLES,
@@ -84,14 +95,19 @@ export const NAVIGATION: NavItem[] = [
   {
     title: 'Reports & Analytics',
     icon: <BarChart3 size={18} />,
-    roles: ['manager', 'legal_officer', 'admin_assistant'],
+    roles: ['manager', 'legal_officer', 'admin_assistant', 'requesting_organ'],
     submenu: [
-      { title: 'Contract Reports', href: '/reports/contracts', roles: ['manager', 'admin_assistant'] },
-      { title: 'Advisory Reports', href: '/reports/advisory', roles: ['manager', 'admin_assistant'] },
-      { title: 'SLA Reports', href: '/reports/sla', roles: ['manager', 'admin_assistant'] },
-      { title: 'Performance Reports', href: '/reports/performance', roles: ['manager'] },
-      { title: 'Compliance Reports', href: '/reports/compliance', roles: ['manager', 'admin_assistant'] },
+      { title: 'Executive Dashboard', href: '/reports/executive', roles: ['manager', 'legal_officer'] },
+      { title: 'Contract Reports', href: '/reports/contracts', roles: ['manager', 'legal_officer', 'admin_assistant'] },
+      { title: 'Advisory Reports', href: '/reports/advisory', roles: ['manager', 'legal_officer', 'admin_assistant'] },
+      { title: 'SLA Dashboard', href: '/reports/sla', roles: ['manager', 'legal_officer', 'admin_assistant'] },
+      { title: 'Performance Dashboard', href: '/reports/performance', roles: ['manager', 'legal_officer'] },
+      { title: 'Compliance Dashboard', href: '/reports/compliance', roles: ['manager', 'admin_assistant'] },
       { title: 'Audit Reports', href: '/reports/audit', roles: ['manager', 'admin_assistant'] },
+      { title: 'Analytics Dashboard', href: '/reports/analytics', roles: ['manager', 'legal_officer'] },
+      { title: 'Report Builder', href: '/reports/builder', roles: ['manager', 'admin_assistant'] },
+      { title: 'Scheduled Reports', href: '/reports/scheduled', roles: ['manager', 'admin_assistant'] },
+      { title: 'Export Center', href: '/reports/export', roles: ['manager', 'legal_officer', 'admin_assistant'] },
     ],
   },
   {

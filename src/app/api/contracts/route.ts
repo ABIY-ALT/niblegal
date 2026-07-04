@@ -1,21 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import prisma from '@/lib/prisma';
+import { getCurrentUser } from '@/lib/session';
 import { contractSchema } from '@/lib/validations/contract';
+import { generateContractNumber } from '@/lib/contractNumber';
+import { logContractActivity } from '@/lib/contractHistory';
+import { transitionContractStage } from '@/lib/contractWorkflow';
+import { notifyContractWorkflow } from '@/lib/notifyContract';
+import type { Prisma } from '@prisma/client';
 
 export async function GET(req: NextRequest) {
   try {
+    const user = await getCurrentUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
     const { searchParams } = new URL(req.url);
     const status = searchParams.get('status');
     const category = searchParams.get('category');
-    
-    // Pagination
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '10');
+    const search = searchParams.get('search');
+    const scope = searchParams.get('scope'); // 'mine' | 'assigned' | undefined
+
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '10')));
     const skip = (page - 1) * limit;
 
-    const where: any = {};
-    if (status && status !== 'all') where.status = status;
-    if (category && category !== 'all') where.category = category;
+    const where: Prisma.ContractWhereInput = {};
+    if (status && status !== 'all') where.status = status as Prisma.ContractWhereInput['status'];
+    if (category && category !== 'all') where.category = category as Prisma.ContractWhereInput['category'];
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { contractNumber: { contains: search, mode: 'insensitive' } },
+        { counterparty: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    // Requesting organs only see their own / their department's contracts.
+    if (scope === 'mine' || user.role === 'requesting_organ') {
+      where.OR = [
+        { requesterId: user.id },
+        ...(user.departmentId ? [{ requestingDepartmentId: user.departmentId }] : []),
+      ];
+    } else if (scope === 'assigned') {
+      where.assigneeId = user.id;
+    }
 
     const [contracts, total] = await Promise.all([
       prisma.contract.findMany({
@@ -26,19 +53,15 @@ export async function GET(req: NextRequest) {
         include: {
           requester: { select: { firstName: true, lastName: true } },
           assignee: { select: { firstName: true, lastName: true } },
-        }
+          requestingDepartment: { select: { name: true } },
+        },
       }),
-      prisma.contract.count({ where })
+      prisma.contract.count({ where }),
     ]);
 
     return NextResponse.json({
       data: contracts,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit)
-      }
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     });
   } catch (error) {
     console.error('Failed to fetch contracts:', error);
@@ -48,38 +71,42 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
     const body = await req.json();
     const validated = contractSchema.parse(body);
+    const { requestingDepartmentId, ...rest } = validated;
 
-    // Get current user (mocking auth for now based on store)
-    // In real app use: const session = await auth(); const userId = session.user.id;
-    const adminUser = await prisma.user.findFirst({ where: { email: 'h.tesfaye@nibbank.et' }});
-    if (!adminUser) {
-      return NextResponse.json({ error: 'No user found' }, { status: 500 });
-    }
-
-    // Generate contract number
-    const count = await prisma.contract.count();
-    const contractNumber = `NIB-CMS-2026-${String(count + 1).padStart(5, '0')}`;
+    const contractNumber = await generateContractNumber();
 
     const contract = await prisma.contract.create({
       data: {
-        ...validated,
+        ...rest,
         contractNumber,
         status: 'DRAFT',
-        requesterId: adminUser.id,
-      }
+        requesterId: user.id,
+        requestingDepartmentId: requestingDepartmentId ?? user.departmentId ?? null,
+      },
     });
 
-    // Log audit
-    await prisma.auditLog.create({
-      data: {
-        module: 'CMS',
-        action: 'CREATED',
-        details: `Contract request ${contractNumber} created`,
-        userId: adminUser.id,
-        contractId: contract.id,
-      }
+    await transitionContractStage(contract.id, 'DRAFT', user.id, 'Contract request created');
+    await logContractActivity({
+      contractId: contract.id,
+      actorId: user.id,
+      action: 'CREATED',
+      description: `Contract request ${contractNumber} created by ${user.name}`,
+      toValue: 'DRAFT',
+    });
+
+    // Alert the legal team that a new request awaits drafting/assignment.
+    await notifyContractWorkflow({
+      contractId: contract.id,
+      title: 'New contract request',
+      body: `${contractNumber} — ${contract.title}`,
+      type: 'INFO',
+      actorId: user.id,
+      recipientRoles: ['Manager', 'Legal Officer'],
     });
 
     return NextResponse.json(contract, { status: 201 });

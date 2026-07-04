@@ -32,6 +32,14 @@ model User {
   contractsRequested Contract[] @relation("ContractRequester")
   contractsAssigned  Contract[] @relation("ContractAssignee")
 
+  contractApprovalsGiven     ContractApproval[]   @relation("ContractApprovalApprover")
+  contractApprovalsDelegated ContractApproval[]   @relation("ContractApprovalDelegatedTo")
+  contractAssignmentsAsOfficer  ContractAssignment[] @relation("ContractAssignmentOfficer")
+  contractAssignmentsAsPrevious ContractAssignment[] @relation("ContractAssignmentPreviousOfficer")
+  contractAssignmentsMade       ContractAssignment[] @relation("ContractAssignmentAssignedBy")
+  contractWorkflowActions       ContractWorkflow[]   @relation("ContractWorkflowActor")
+  contractHistoryActions        ContractHistory[]    @relation("ContractHistoryActor")
+
   legalRequestsRequested LegalRequest[] @relation("LegalRequestRequester")
   legalRequestsAssigned  LegalRequest[] @relation("LegalRequestAssignee")
 
@@ -48,9 +56,31 @@ model User {
   legalHistoryActions         LegalHistory[]        @relation("HistoryActor")
   legalOpinionVersionsWritten LegalOpinionVersion[] @relation("OpinionVersionCreatedBy")
 
-  knowledgeDocs KnowledgeDocument[]
-  comments      Comment[]
-  auditLogs     AuditLog[]
+  knowledgeDocs                KnowledgeDocument[]
+  knowledgeBookmarks           KnowledgeBookmark[]
+  knowledgeDownloads           KnowledgeDownload[]
+  knowledgeCommentsAuthored    KnowledgeComment[]    @relation("KnowledgeCommentAuthor")
+  knowledgeHistoryActions      KnowledgeHistory[]    @relation("KnowledgeHistoryActor")
+  knowledgeVersionsCreated     KnowledgeVersion[]    @relation("KnowledgeVersionCreatedBy")
+  knowledgeVersionsApproved    KnowledgeVersion[]    @relation("KnowledgeVersionApprovedBy")
+  knowledgeApprovalsGiven      KnowledgeApproval[]   @relation("KnowledgeApprovalApprover")
+  knowledgeAttachmentsUploaded KnowledgeAttachment[] @relation("KnowledgeAttachmentUploadedBy")
+
+  comments  Comment[]
+  auditLogs AuditLog[]
+
+  // Notification relations
+  notificationsReceived   Notification[]          @relation("NotificationRecipient")
+  notificationsSent       Notification[]          @relation("NotificationSender")
+  messagesSent            Message[]               @relation("MessageSender")
+  messagesReceived        Message[]               @relation("MessageRecipient")
+  announcements           Announcement[]          @relation("AnnouncementAuthor")
+  notificationPreference  NotificationPreference?
+  
+  // Workflow relations
+  workflowsCreated        WorkflowDefinition[]    @relation("WorkflowCreatedBy")
+  workflowTasksAssigned   WorkflowTask[]          @relation("TaskAssignedTo")
+  workflowHistoryActions  WorkflowHistory[]       @relation("HistoryActor")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -77,11 +107,13 @@ model Permission {
 }
 
 model Department {
-  id            String         @id @default(uuid())
-  name          String         @unique
-  code          String         @unique
-  users         User[]
-  legalRequests LegalRequest[]
+  id                 String              @id @default(uuid())
+  name               String              @unique
+  code               String              @unique
+  users              User[]
+  contracts          Contract[]          @relation("ContractDepartment")
+  legalRequests      LegalRequest[]
+  knowledgeDocuments KnowledgeDocument[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -132,6 +164,15 @@ model Contract {
   expiryDate       DateTime?
   renewalAlertDays Int       @default(30)
   slaDeadline      DateTime?
+  slaBreached      Boolean   @default(false)
+  slaMetAt         DateTime?
+
+  requiresDirectorApproval Boolean @default(false)
+
+  submittedAt  DateTime?
+  approvedAt   DateTime?
+  executedAt   DateTime?
+  dispatchedAt DateTime?
 
   tags String[]
 
@@ -142,10 +183,19 @@ model Contract {
   assigneeId String?
   assignee   User?   @relation("ContractAssignee", fields: [assigneeId], references: [id])
 
-  versions      ContractVersion[]
-  comments      Comment[]
-  auditLogs     AuditLog[]
-  legalRequests LegalRequest[]
+  requestingDepartmentId String?
+  requestingDepartment   Department? @relation("ContractDepartment", fields: [requestingDepartmentId], references: [id])
+
+  versions           ContractVersion[]
+  comments           Comment[]
+  auditLogs          AuditLog[]
+  legalRequests      LegalRequest[]
+  knowledgeDocuments KnowledgeDocument[]
+
+  approvals     ContractApproval[]
+  assignments   ContractAssignment[]
+  workflowSteps ContractWorkflow[]
+  history       ContractHistory[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -153,6 +203,90 @@ model Contract {
   @@index([status])
   @@index([category])
   @@index([contractNumber])
+}
+
+enum ContractApprovalStage {
+  DIVISION_MANAGER
+  DEPARTMENT_DIRECTOR
+}
+
+model ContractApproval {
+  id        String                @id @default(uuid())
+  stage     ContractApprovalStage
+  decision  ApprovalDecision
+  comments  String?
+  decidedAt DateTime              @default(now())
+
+  contractId String
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  approverId String
+  approver   User   @relation("ContractApprovalApprover", fields: [approverId], references: [id])
+
+  delegatedToId String?
+  delegatedTo   User?   @relation("ContractApprovalDelegatedTo", fields: [delegatedToId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@map("contract_approvals")
+}
+
+model ContractAssignment {
+  id     String           @id @default(uuid())
+  action AssignmentAction
+  notes  String?
+
+  contractId String
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  officerId String?
+  officer   User?   @relation("ContractAssignmentOfficer", fields: [officerId], references: [id])
+
+  previousOfficerId String?
+  previousOfficer   User?   @relation("ContractAssignmentPreviousOfficer", fields: [previousOfficerId], references: [id])
+
+  assignedById String
+  assignedBy   User   @relation("ContractAssignmentAssignedBy", fields: [assignedById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@map("contract_assignments")
+}
+
+model ContractWorkflow {
+  id        String         @id @default(uuid())
+  stage     ContractStatus
+  enteredAt DateTime       @default(now())
+  exitedAt  DateTime?
+  notes     String?
+
+  contractId String
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  actorId String?
+  actor   User?   @relation("ContractWorkflowActor", fields: [actorId], references: [id])
+
+  @@index([contractId])
+  @@map("contract_workflow")
+}
+
+model ContractHistory {
+  id          String  @id @default(uuid())
+  action      String
+  fromValue   String?
+  toValue     String?
+  description String
+
+  contractId String
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  actorId String?
+  actor   User?   @relation("ContractHistoryActor", fields: [actorId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([contractId])
+  @@map("contract_history")
 }
 
 model ContractVersion {
@@ -309,14 +443,15 @@ model LegalRequest {
   closedAt   DateTime?
   archivedAt DateTime?
 
-  opinion       LegalOpinion?
-  assignments   LegalAssignment[]
-  approvals     LegalApproval[]
-  workflowSteps LegalWorkflow[]
-  comments      LegalComment[]
-  attachments   LegalAttachment[]
-  history       LegalHistory[]
-  auditLogs     AuditLog[]
+  opinion            LegalOpinion?
+  assignments        LegalAssignment[]
+  approvals          LegalApproval[]
+  workflowSteps      LegalWorkflow[]
+  comments           LegalComment[]
+  attachments        LegalAttachment[]
+  history            LegalHistory[]
+  auditLogs          AuditLog[]
+  knowledgeDocuments KnowledgeDocument[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -498,9 +633,6 @@ model Comment {
   contractId String?
   contract   Contract? @relation(fields: [contractId], references: [id], onDelete: Cascade)
 
-  knowledgeDocumentId String?
-  knowledgeDocument   KnowledgeDocument? @relation(fields: [knowledgeDocumentId], references: [id], onDelete: Cascade)
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -527,6 +659,9 @@ model AuditLog {
 
   legalRequestId String?
   legalRequest   LegalRequest? @relation(fields: [legalRequestId], references: [id], onDelete: SetNull)
+
+  knowledgeDocumentId String?
+  knowledgeDocument   KnowledgeDocument? @relation(fields: [knowledgeDocumentId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
 
@@ -555,17 +690,37 @@ enum ConfidentialityLevel {
   HIGHLY_CONFIDENTIAL
 }
 
+enum KnowledgeApprovalStage {
+  REVIEWER
+  MANAGER
+}
+
 model KnowledgeCategory {
-  id          String              @id @default(uuid())
-  name        String              @unique
+  id          String  @id @default(uuid())
+  name        String  @unique
+  code        String? @unique
   description String?
-  documents   KnowledgeDocument[]
+  icon        String?
+  isActive    Boolean @default(true)
+
+  parentId String?
+  parent   KnowledgeCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children KnowledgeCategory[] @relation("CategoryHierarchy")
+
+  documents KnowledgeDocument[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("knowledge_categories")
 }
 
 model KnowledgeTag {
   id        String              @id @default(uuid())
   name      String              @unique
   documents KnowledgeDocument[] @relation("DocumentTags")
+
+  @@map("knowledge_tags")
 }
 
 model KnowledgeDocument {
@@ -575,6 +730,16 @@ model KnowledgeDocument {
   description     String?
   status          KnowledgeStatus      @default(DRAFT)
   confidentiality ConfidentialityLevel @default(PUBLIC_INTERNAL)
+
+  content        String? // TipTap HTML for authored items (templates/clauses/memos)
+  currentVersion Int      @default(1)
+  keywords       String[]
+  coverImageUrl  String?
+
+  // Regulation-specific searchability
+  lawName       String?
+  articleNumber String?
+  sectionNumber String?
 
   effectiveDate DateTime?
   reviewDate    DateTime?
@@ -587,15 +752,28 @@ model KnowledgeDocument {
 
   // Relations to other modules
   relatedContractId String?
-  relatedRequestId  String?
-  relatedDepartment String?
+  relatedContract   Contract? @relation(fields: [relatedContractId], references: [id])
+
+  relatedLegalRequestId String?
+  relatedLegalRequest   LegalRequest? @relation(fields: [relatedLegalRequestId], references: [id])
+
+  relatedDepartmentId String?
+  relatedDepartment   Department? @relation(fields: [relatedDepartmentId], references: [id])
+
+  relatedDocuments KnowledgeDocument[] @relation("RelatedDocuments")
+  relatedFrom      KnowledgeDocument[] @relation("RelatedDocuments")
 
   authorId String
   author   User   @relation(fields: [authorId], references: [id])
 
-  versions    KnowledgeVersion[]
-  attachments KnowledgeAttachment[]
-  comments    Comment[]
+  versions     KnowledgeVersion[]
+  attachments  KnowledgeAttachment[]
+  comments     KnowledgeComment[]
+  bookmarks    KnowledgeBookmark[]
+  downloadLogs KnowledgeDownload[]
+  history      KnowledgeHistory[]
+  approvals    KnowledgeApproval[]
+  auditLogs    AuditLog[]
 
   downloads Int @default(0)
 
@@ -605,25 +783,50 @@ model KnowledgeDocument {
   @@index([status])
   @@index([categoryId])
   @@index([documentNumber])
+  @@map("knowledge_documents")
 }
 
 model KnowledgeVersion {
   id            String  @id @default(uuid())
   versionNumber Int
-  fileUrl       String
-  fileName      String
-  fileSize      Int
-  fileType      String
+  fileUrl       String?
+  fileName      String?
+  fileSize      Int?
+  fileType      String?
+  content       String? // for content-based versions (templates/clauses/memos)
   changes       String?
 
   documentId String
   document   KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   uploadedById String
+  uploadedBy   User   @relation("KnowledgeVersionCreatedBy", fields: [uploadedById], references: [id])
+
+  approvedById String?
+  approvedBy   User?     @relation("KnowledgeVersionApprovedBy", fields: [approvedById], references: [id])
+  approvedAt   DateTime?
 
   createdAt DateTime @default(now())
 
   @@unique([documentId, versionNumber])
+  @@map("knowledge_versions")
+}
+
+model KnowledgeComment {
+  id         String  @id @default(uuid())
+  text       String
+  isInternal Boolean @default(true)
+
+  documentId String
+  document   KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  authorId String
+  author   User   @relation("KnowledgeCommentAuthor", fields: [authorId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("knowledge_comments")
 }
 
 model KnowledgeAttachment {
@@ -636,5 +839,548 @@ model KnowledgeAttachment {
   documentId String
   document   KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
+  uploadedById String
+  uploadedBy   User   @relation("KnowledgeAttachmentUploadedBy", fields: [uploadedById], references: [id])
+
   createdAt DateTime @default(now())
+
+  @@map("knowledge_attachments")
+}
+
+model KnowledgeBookmark {
+  id       String  @id @default(uuid())
+  isPinned Boolean @default(false)
+
+  documentId String
+  document   KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  lastViewedAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  @@unique([documentId, userId])
+  @@map("knowledge_bookmarks")
+}
+
+model KnowledgeDownload {
+  id String @id @default(uuid())
+
+  documentId String
+  document   KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([documentId])
+  @@map("knowledge_downloads")
+}
+
+model KnowledgeHistory {
+  id          String  @id @default(uuid())
+  action      String
+  fromValue   String?
+  toValue     String?
+  description String
+
+  documentId String
+  document   KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  actorId String?
+  actor   User?   @relation("KnowledgeHistoryActor", fields: [actorId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([documentId])
+  @@map("knowledge_history")
+}
+
+model KnowledgeApproval {
+  id        String                 @id @default(uuid())
+  stage     KnowledgeApprovalStage
+  decision  ApprovalDecision
+  comments  String?
+  decidedAt DateTime               @default(now())
+
+  documentId String
+  document   KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  approverId String
+  approver   User   @relation("KnowledgeApprovalApprover", fields: [approverId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@map("knowledge_approvals")
+}
+
+// ---------------------------------------------------------
+// Workflow Configuration Engine
+// ---------------------------------------------------------
+
+enum WorkflowStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+  DEPRECATED
+}
+
+enum WorkflowModule {
+  CMS
+  LAHD
+  KNOWLEDGE
+  SYSTEM
+  CUSTOM
+}
+
+model WorkflowDefinition {
+  id          String         @id @default(uuid())
+  name        String         @unique
+  description String?
+  module      WorkflowModule
+  status      WorkflowStatus @default(DRAFT)
+  
+  versions    WorkflowVersion[]
+  instances   WorkflowInstance[]
+  
+  createdById String
+  createdBy   User           @relation("WorkflowCreatedBy", fields: [createdById], references: [id])
+  
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@map("workflow_definitions")
+}
+
+model WorkflowVersion {
+  id             String             @id @default(uuid())
+  versionNumber  Int
+  flowData       Json               // Stores React Flow nodes and edges
+  configData     Json               // Stores SLA, Notification rules, Escalation rules
+  isPublished    Boolean            @default(false)
+  
+  definitionId   String
+  definition     WorkflowDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  
+  instances      WorkflowInstance[]
+  
+  createdAt      DateTime           @default(now())
+  
+  @@unique([definitionId, versionNumber])
+  @@map("workflow_versions")
+}
+
+enum InstanceStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+  PAUSED
+}
+
+model WorkflowInstance {
+  id             String             @id @default(uuid())
+  status         InstanceStatus     @default(RUNNING)
+  currentStepId  String?            // ID from React Flow node
+  contextData    Json?              // Document ID, Requester ID, metadata
+  
+  definitionId   String
+  definition     WorkflowDefinition @relation(fields: [definitionId], references: [id])
+  
+  versionId      String
+  version        WorkflowVersion    @relation(fields: [versionId], references: [id])
+  
+  tasks          WorkflowTask[]
+  history        WorkflowHistory[]
+  
+  startedAt      DateTime           @default(now())
+  completedAt    DateTime?
+  
+  @@map("workflow_instances")
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
+  RETURNED
+  CANCELLED
+}
+
+model WorkflowTask {
+  id             String             @id @default(uuid())
+  stepId         String             // Link back to React Flow node ID
+  stepName       String
+  status         TaskStatus         @default(PENDING)
+  
+  assignedToId   String?
+  assignedTo     User?              @relation("TaskAssignedTo", fields: [assignedToId], references: [id])
+  
+  assignedRoleId String?            // Or assign by Role
+  
+  instanceId     String
+  instance       WorkflowInstance   @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  
+  dueDate        DateTime?
+  completedAt    DateTime?
+  
+  createdAt      DateTime           @default(now())
+  
+  @@map("workflow_tasks")
+}
+
+model WorkflowHistory {
+  id             String             @id @default(uuid())
+  action         String
+  details        String?
+  nodeId         String?            // Which node this relates to
+  
+  instanceId     String
+  instance       WorkflowInstance   @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  
+  actorId        String?
+  actor          User?              @relation("HistoryActor", fields: [actorId], references: [id])
+  
+  createdAt      DateTime           @default(now())
+  
+  @@map("workflow_history")
+}
+
+// ---------------------------------------------------------
+// Notifications & Communication Center
+// ---------------------------------------------------------
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+  CRITICAL
+  APPROVAL
+  REMINDER
+  ANNOUNCEMENT
+  WORKFLOW
+  SLA_ALERT
+  EXPIRY_ALERT
+}
+
+enum NotificationPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+  ARCHIVED
+  DELETED
+}
+
+model Notification {
+  id          String               @id @default(uuid())
+  title       String
+  body        String
+  type        NotificationType     @default(INFO)
+  priority    NotificationPriority @default(MEDIUM)
+  status      NotificationStatus   @default(UNREAD)
+
+  module      String?
+  relatedId   String?
+  actionUrl   String?
+
+  isEmailSent Boolean             @default(false)
+  isPinned    Boolean             @default(false)
+  isStarred   Boolean             @default(false)
+
+  recipientId String
+  recipient   User                 @relation("NotificationRecipient", fields: [recipientId], references: [id])
+
+  senderId    String?
+  sender      User?                @relation("NotificationSender",    fields: [senderId],    references: [id])
+
+  readAt      DateTime?
+  expiresAt   DateTime?
+
+  createdAt   DateTime             @default(now())
+
+  @@index([recipientId, status])
+  @@index([type])
+  @@index([createdAt])
+}
+
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ
+  ARCHIVED
+  DELETED
+}
+
+model MessageThread {
+  id          String    @id @default(uuid())
+  subject     String
+  isArchived  Boolean   @default(false)
+  
+  messages    Message[]
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Message {
+  id          String        @id @default(uuid())
+  body        String
+  status      MessageStatus @default(SENT)
+  isRead      Boolean       @default(false)
+  readAt      DateTime?
+
+  threadId    String
+  thread      MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  senderId    String
+  sender      User          @relation("MessageSender",    fields: [senderId],    references: [id])
+
+  recipientId String
+  recipient   User          @relation("MessageRecipient", fields: [recipientId], references: [id])
+
+  parentId    String?
+  parent      Message?      @relation("MessageReplies", fields: [parentId], references: [id])
+  replies     Message[]     @relation("MessageReplies")
+
+  attachments MessageAttachment[]
+
+  createdAt   DateTime      @default(now())
+
+  @@index([threadId])
+  @@index([recipientId, isRead])
+}
+
+model MessageAttachment {
+  id        String   @id @default(uuid())
+  fileUrl   String
+  fileName  String
+  fileSize  Int
+  fileType  String
+
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+enum AnnouncementStatus {
+  DRAFT
+  PUBLISHED
+  EXPIRED
+  ARCHIVED
+}
+
+enum AnnouncementPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Announcement {
+  id           String               @id @default(uuid())
+  title        String
+  body         String
+  status       AnnouncementStatus   @default(DRAFT)
+  priority     AnnouncementPriority @default(MEDIUM)
+  
+  targetRoles  String[]
+  
+  publishAt    DateTime?
+  expiresAt    DateTime?
+
+  authorId     String
+  author       User                 @relation("AnnouncementAuthor", fields: [authorId], references: [id])
+
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  @@index([status])
+}
+
+model NotificationPreference {
+  id              String  @id @default(uuid())
+
+  userId          String  @unique
+  user            User    @relation(fields: [userId], references: [id])
+
+  inAppContracts  Boolean @default(true)
+  inAppAdvisory   Boolean @default(true)
+  inAppApprovals  Boolean @default(true)
+  inAppSLA        Boolean @default(true)
+  inAppAnnounce   Boolean @default(true)
+
+  emailContracts  Boolean @default(true)
+  emailAdvisory   Boolean @default(true)
+  emailApprovals  Boolean @default(true)
+  emailSLA        Boolean @default(true)
+  emailAnnounce   Boolean @default(false)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model EmailLog {
+  id          String   @id @default(uuid())
+  to          String
+  subject     String
+  template    String
+  status      String
+  error       String?
+  
+  userId      String?
+  
+  sentAt      DateTime @default(now())
+
+  @@index([status])
+  @@index([sentAt])
+}
+
+// ---------------------------------------------------------
+// System Settings & Security
+// ---------------------------------------------------------
+
+model SystemSettings {
+  id               String   @id @default("default") // Singleton pattern
+  bankName         String   @default("Nib International Bank S.C.")
+  departmentName   String   @default("Legal Services Department")
+  systemName       String   @default("Legal Management System")
+  defaultLanguage  String   @default("en")
+  timeZone         String   @default("Africa/Addis_Ababa")
+  dateFormat       String   @default("DD/MM/YYYY")
+  currency         String   @default("ETB")
+  paginationSize   Int      @default(20)
+  theme            String   @default("system")
+  
+  updatedAt        DateTime @updatedAt
+  
+  @@map("system_settings")
+}
+
+model SecuritySettings {
+  id                   String   @id @default("default") // Singleton
+  jwtExpiration        Int      @default(3600) // seconds
+  sessionTimeout       Int      @default(1800) // seconds
+  maxLoginAttempts     Int      @default(3)
+  accountLockDuration  Int      @default(900) // seconds
+  passwordExpiryDays   Int      @default(90)
+  requireMfa           Boolean  @default(false)
+  
+  updatedAt            DateTime @updatedAt
+
+  @@map("security_settings")
+}
+
+model SmtpSettings {
+  id             String   @id @default("default") // Singleton
+  host           String   @default("smtp.gmail.com")
+  port           Int      @default(587)
+  secure         Boolean  @default(false)
+  username       String?
+  password       String?
+  senderEmail    String   @default("noreply@nibbank.et")
+  senderName     String   @default("NIB Legal System")
+  
+  updatedAt      DateTime @updatedAt
+
+  @@map("smtp_settings")
+}
+
+model NumberingSettings {
+  id              String   @id @default("default") // Singleton
+  contractPrefix  String   @default("CON")
+  requestPrefix   String   @default("LEG")
+  docPrefix       String   @default("DOC")
+  empPrefix       String   @default("EMP")
+  useYear         Boolean  @default(true)
+  sequenceLength  Int      @default(6)
+  
+  updatedAt       DateTime @updatedAt
+
+  @@map("numbering_settings")
+}
+
+model Holiday {
+  id          String   @id @default(uuid())
+  name        String
+  date        DateTime
+  isRecurring Boolean  @default(false) // If true, ignore year
+  
+  createdAt   DateTime @default(now())
+  
+  @@map("holidays")
+}
+
+model ApiKey {
+  id          String   @id @default(uuid())
+  name        String
+  key         String   @unique
+  scopes      String[] // e.g., ["read:contracts", "write:contracts"]
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  isActive    Boolean  @default(true)
+  
+  createdAt   DateTime @default(now())
+  
+  @@map("api_keys")
+}
+
+model Integration {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  type        String   // e.g., "LDAP", "ERP", "HRMS"
+  config      Json
+  isActive    Boolean  @default(false)
+  
+  updatedAt   DateTime @updatedAt
+  
+  @@map("integrations")
+}
+
+model FeatureFlag {
+  id          String   @id @default(uuid())
+  name        String   @unique // e.g., "enable_ai_module"
+  isEnabled   Boolean  @default(false)
+  description String?
+  
+  updatedAt   DateTime @updatedAt
+  
+  @@map("feature_flags")
+}
+
+model BackupHistory {
+  id          String   @id @default(uuid())
+  fileName    String
+  fileSize    Int
+  status      String   // SUCCESS, FAILED
+  type        String   // MANUAL, AUTOMATIC
+  triggeredBy String?
+  
+  createdAt   DateTime @default(now())
+  
+  @@map("backup_history")
+}
+
+model ApplicationLog {
+  id          String   @id @default(uuid())
+  level       String   // INFO, WARN, ERROR
+  source      String   // SYSTEM, AUTH, DB
+  message     String
+  meta        Json?
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([level])
+  @@index([createdAt])
+  @@map("application_logs")
 }

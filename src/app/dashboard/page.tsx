@@ -2,12 +2,37 @@
 import { useState, useEffect } from 'react';
 import { contracts, advisoryRequests, USERS, getCMSStats, getLAHDStats, getAllAuditTrail, currentUser } from '@/data/store';
 import { CONTRACT_CATEGORY_LABELS, URGENCY_COLORS, CONTRACT_STATUS_COLORS, ADVISORY_STATUS_COLORS, CONTRACT_STATUS_LABELS, formatDate, timeAgo } from '@/utils/formatters';
-import { 
-  FileText, Scale, AlertTriangle, CheckCircle, Clock, TrendingUp, Users, 
-  BarChart3, Activity, Zap, ArrowRight, Timer, Bell, Search, Plus, Upload, 
-  FolderSearch, Calendar, ChevronRight, Briefcase 
+import {
+  FileText, Scale, AlertTriangle, CheckCircle, Clock, TrendingUp, Users,
+  BarChart3, Activity, Zap, ArrowRight, Timer, Bell, Search, Plus, Upload,
+  FolderSearch, Calendar, ChevronRight, Briefcase
 } from 'lucide-react';
 import Link from 'next/link';
+import {
+  ResponsiveContainer, BarChart as ReBarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip, Cell, AreaChart, Area, Legend,
+} from 'recharts';
+
+// ─── Themed Recharts tooltip ───────────────────────────────────────────────
+function ChartTooltip({ active, payload, label }: any) {
+  if (!active || !payload || !payload.length) return null;
+  return (
+    <div style={{
+      background: 'var(--surface)', border: '1px solid var(--border)',
+      borderRadius: 'var(--radius-sm)', padding: '10px 14px', boxShadow: 'var(--shadow-md)',
+      fontSize: 12,
+    }}>
+      {label && <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>{label}</div>}
+      {payload.map((p: any, i: number) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-secondary)', marginTop: i ? 3 : 0 }}>
+          <span style={{ width: 9, height: 9, borderRadius: 3, background: p.color || p.fill, display: 'inline-block' }} />
+          <span style={{ flex: 1 }}>{p.name}</span>
+          <strong style={{ color: 'var(--text-primary)' }}>{p.value}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // Simulated notifications separated by type
 const INITIAL_NOTIFICATIONS = {
@@ -25,16 +50,19 @@ const INITIAL_NOTIFICATIONS = {
 // ─── UI Components ─────────────────────────────────────────────────────────────
 
 function BarChart({ data }: { data: { label: string; value: number; color: string }[] }) {
-  const max = Math.max(...data.map(d => d.value), 1);
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, height: 160, paddingTop: 16 }}>
-      {data.map((d, i) => (
-        <div key={i} className="chart-bar-container" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, height: '100%', justifyContent: 'flex-end' }} title={`${d.label}: ${d.value}`}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>{d.value}</span>
-          <div style={{ width: '100%', maxWidth: 40, height: `${(d.value / max) * 100}px`, minHeight: d.value ? 4 : 0, background: d.color, borderRadius: '6px 6px 0 0', transition: 'height 0.8s cubic-bezier(0.4, 0, 0.2, 1)' }} />
-          <span style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>{d.label}</span>
-        </div>
-      ))}
+    <div style={{ width: '100%', height: 200 }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <ReBarChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }} barCategoryGap="28%">
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+          <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickLine={false} axisLine={{ stroke: 'var(--border)' }} />
+          <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickLine={false} axisLine={false} allowDecimals={false} width={40} />
+          <Tooltip cursor={{ fill: 'var(--bg-card-hover)' }} content={<ChartTooltip />} />
+          <Bar dataKey="value" name="Contracts" radius={[6, 6, 0, 0]} maxBarSize={48}>
+            {data.map((d, i) => <Cell key={i} fill={d.color} />)}
+          </Bar>
+        </ReBarChart>
+      </ResponsiveContainer>
     </div>
   );
 }
@@ -91,11 +119,11 @@ function QuickActionBtn({ icon, label, href, primary = false }: { icon: React.Re
     <Link href={href} style={{ textDecoration: 'none' }}>
       <div style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '20px 16px',
-        background: primary ? 'var(--accent)' : 'var(--bg-card)',
-        color: primary ? '#fff' : 'var(--text-primary)',
+        background: primary ? 'var(--primary)' : 'var(--bg-card)',
+        color: primary ? '#3B2718' : 'var(--text-primary)',
         border: primary ? 'none' : '1px solid var(--border)',
         borderRadius: 'var(--radius-lg)', cursor: 'pointer', textAlign: 'center',
-        boxShadow: primary ? '0 8px 16px rgba(37,99,235,0.2)' : '0 2px 8px rgba(0,0,0,0.02)',
+        boxShadow: primary ? '0 8px 16px var(--accent-glow)' : '0 2px 8px rgba(0,0,0,0.02)',
         transition: 'all 0.2s', height: '100%', justifyContent: 'center'
       }} className="hover:scale-105">
         <div style={{ width: 48, height: 48, borderRadius: '50%', background: primary ? 'rgba(255,255,255,0.2)' : 'var(--bg-body)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -159,6 +187,7 @@ export default function DashboardPage() {
   const months = ['Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'];
   const monthlyContracts = [3, 5, 2, 7, 4, contracts.length];
   const monthlyAdvisory = [2, 3, 4, 2, 5, advisoryRequests.length];
+  const monthlyData = months.map((m, i) => ({ month: m, Contracts: monthlyContracts[i], Advisory: monthlyAdvisory[i] }));
 
   const officers = USERS.filter(u => u.role === 'legal_officer');
 
@@ -191,7 +220,7 @@ export default function DashboardPage() {
               fontSize: 14, color: 'var(--text-primary)', outline: 'none',
               transition: 'border-color 0.2s, box-shadow 0.2s'
             }}
-            onFocus={(e) => { e.target.style.borderColor = 'var(--accent)'; e.target.style.boxShadow = '0 0 0 3px rgba(37,99,235,0.1)'; }}
+            onFocus={(e) => { e.target.style.borderColor = 'var(--accent)'; e.target.style.boxShadow = '0 0 0 3px var(--accent-glow)'; }}
             onBlur={(e) => { e.target.style.borderColor = 'var(--border)'; e.target.style.boxShadow = 'none'; }}
           />
         </div>
@@ -237,7 +266,7 @@ export default function DashboardPage() {
               <BarChart3 size={16} color="var(--accent)" /> Key Performance Indicators
             </h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
-              <StatCard label="Total Contracts" value={cms.totalContracts} sub="All time repository" icon={<FileText size={20} />} color="#3b82f6" trend="+12% this month" />
+              <StatCard label="Total Contracts" value={cms.totalContracts} sub="All time repository" icon={<FileText size={20} />} color="#EAB308" trend="+12% this month" />
               <StatCard label="Active Contracts" value={cms.active} sub="Currently in force" icon={<CheckCircle size={20} />} color="#10b981" />
               <StatCard label="Pending Approvals" value={pendingApprovals} sub="Awaiting manager sign-off" icon={<Clock size={20} />} color="#f59e0b" />
               <StatCard label="SLA Breached" value={lahd.slaBreached + slaBreachedContracts.length} sub="Overdue tasks" icon={<AlertTriangle size={20} />} color="#ef4444" />
@@ -255,20 +284,28 @@ export default function DashboardPage() {
             {/* Monthly Legal Activities */}
             <div className="card" style={{ padding: 24 }}>
               <div className="card-header" style={{ marginBottom: 20 }}><span className="card-title" style={{ fontSize: 16 }}>Monthly Legal Activities</span></div>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, height: 160, paddingTop: 16 }}>
-                {months.map((m, i) => (
-                  <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, height: '100%', justifyContent: 'flex-end' }}>
-                    <div style={{ width: '100%', display: 'flex', gap: 4, alignItems: 'flex-end', justifyContent: 'center' }}>
-                      <div style={{ width: '40%', maxWidth: 16, height: `${(monthlyContracts[i] / 10) * 100}px`, background: 'var(--accent)', borderRadius: '4px 4px 0 0', minHeight: monthlyContracts[i] ? 4 : 0 }} title={`Contracts: ${monthlyContracts[i]}`} />
-                      <div style={{ width: '40%', maxWidth: 16, height: `${(monthlyAdvisory[i] / 10) * 100}px`, background: 'var(--gold)', borderRadius: '4px 4px 0 0', minHeight: monthlyAdvisory[i] ? 4 : 0 }} title={`Advisory: ${monthlyAdvisory[i]}`} />
-                    </div>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{m}</span>
-                  </div>
-                ))}
-              </div>
-              <div style={{ display: 'flex', gap: 24, justifyContent: 'center', marginTop: 20, fontSize: 12, fontWeight: 600 }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 12, height: 12, background: 'var(--accent)', borderRadius: 3, display: 'inline-block' }} />Contracts Drafted</span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 12, height: 12, background: 'var(--gold)', borderRadius: 3, display: 'inline-block' }} />Advisory Rendered</span>
+              <div style={{ width: '100%', height: 200 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={monthlyData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="gradContracts" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#EAB308" stopOpacity={0.35} />
+                        <stop offset="100%" stopColor="#EAB308" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="gradAdvisory" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#2563EB" stopOpacity={0.30} />
+                        <stop offset="100%" stopColor="#2563EB" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickLine={false} axisLine={{ stroke: 'var(--border)' }} />
+                    <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickLine={false} axisLine={false} allowDecimals={false} width={40} />
+                    <Tooltip content={<ChartTooltip />} />
+                    <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 600, paddingTop: 8 }} />
+                    <Area type="monotone" dataKey="Contracts" stroke="#EAB308" strokeWidth={2.5} fill="url(#gradContracts)" dot={{ r: 3, fill: '#EAB308', strokeWidth: 0 }} activeDot={{ r: 5 }} />
+                    <Area type="monotone" dataKey="Advisory" stroke="#2563EB" strokeWidth={2.5} fill="url(#gradAdvisory)" dot={{ r: 3, fill: '#2563EB', strokeWidth: 0 }} activeDot={{ r: 5 }} />
+                  </AreaChart>
+                </ResponsiveContainer>
               </div>
             </div>
           </div>
@@ -310,7 +347,7 @@ export default function DashboardPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           
           {/* My Work Queue */}
-          <div className="card" style={{ padding: 20, background: 'linear-gradient(180deg, var(--bg-card) 0%, rgba(37,99,235,0.02) 100%)', border: '1px solid rgba(37,99,235,0.2)' }}>
+          <div className="card" style={{ padding: 20, background: 'linear-gradient(180deg, var(--bg-card) 0%, rgba(234,179,8,0.04) 100%)', border: '1px solid rgba(234,179,8,0.25)' }}>
             <div className="card-header" style={{ marginBottom: 16 }}>
               <span className="card-title" style={{ fontSize: 16, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Briefcase size={18} /> My Work Queue

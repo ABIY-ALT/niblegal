@@ -90,43 +90,39 @@ export default function Sidebar({ collapsed, setCollapsed, mobileOpen, setMobile
         />
       )}
 
-      <aside className={`sidebar md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} ${collapsed ? 'md:w-[80px]' : 'md:w-[280px]'} w-[280px]`} style={{ 
+      <aside className={`sidebar md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} ${collapsed ? 'md:w-[80px]' : 'md:w-[280px]'} w-[280px]`} style={{
         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         position: 'fixed', top: 0, left: 0, bottom: 0, zIndex: 50,
-        background: 'var(--bg-card)', borderRight: '1px solid var(--border)',
+        background: 'linear-gradient(180deg, var(--sidebar) 0%, color-mix(in srgb, var(--sidebar) 88%, #000) 100%)',
+        borderRight: '1px solid rgba(255,255,255,0.06)',
+        boxShadow: '4px 0 24px rgba(0,0,0,0.12)',
         display: 'flex', flexDirection: 'column'
       }}>
         {/* Logo */}
-        <div style={{ height: 70, display: 'flex', alignItems: 'center', padding: collapsed ? '0' : '0 24px', justifyContent: collapsed ? 'center' : 'space-between', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ 
-              width: 36, height: 36, borderRadius: 8, background: 'linear-gradient(135deg, var(--gold-light), var(--gold))',
-              color: '#0b0e1a', fontWeight: 800, fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 4px 12px rgba(212,168,71,0.3)', flexShrink: 0
-            }}>N</div>
-            {!collapsed && (
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <strong style={{ fontSize: 16, color: 'var(--text-primary)', lineHeight: 1.2 }}>Nib Bank</strong>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Legal Automation</span>
-              </div>
-            )}
-          </div>
+        <div style={{ height: 70, display: 'flex', alignItems: 'center', padding: collapsed ? '0' : '0 24px', justifyContent: collapsed ? 'center' : 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
           {!collapsed && (
-            <button onClick={() => setCollapsed(true)} className="btn btn-ghost btn-sm" style={{ padding: 4 }}>
-              <Menu size={18} />
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 8, background: 'linear-gradient(135deg, var(--gold-light), var(--gold))',
+                color: '#3B2718', fontWeight: 800, fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 4px 12px rgba(234,179,8,0.35)', flexShrink: 0
+              }}>N</div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <strong style={{ fontSize: 16, color: '#fff', lineHeight: 1.2 }}>Nib Bank</strong>
+                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.65)' }}>Legal Automation</span>
+              </div>
+            </div>
           )}
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            style={{ padding: 8, background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.8)', cursor: 'pointer', borderRadius: 8, display: 'flex' }}
+          >
+            <Menu size={20} />
+          </button>
         </div>
 
         {/* Navigation */}
         <nav style={{ flex: 1, overflowY: 'auto', padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {collapsed && (
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-               <button onClick={() => setCollapsed(false)} className="btn btn-ghost btn-sm" style={{ padding: 8 }}>
-                <Menu size={20} />
-              </button>
-            </div>
-          )}
 
           {filteredNav.map((item, idx) => {
             const hasSubmenu = item.submenu && item.submenu.length > 0;
@@ -136,15 +132,16 @@ export default function Sidebar({ collapsed, setCollapsed, mobileOpen, setMobile
               : item.submenu?.some(sub => pathname === sub.href || pathname.startsWith(sub.href + '/'));
             
             const itemContent = (
-              <div style={{ 
-                display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', 
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px',
                 borderRadius: 'var(--radius-md)', cursor: 'pointer',
-                background: isActive && !hasSubmenu ? 'var(--accent-glow)' : 'transparent',
-                color: isActive && !hasSubmenu ? 'var(--accent)' : 'var(--text-secondary)',
-                fontWeight: isActive ? 600 : 500, transition: 'all 0.2s',
+                background: isActive && !hasSubmenu ? 'linear-gradient(135deg, var(--gold-light), var(--primary))' : 'transparent',
+                color: isActive && !hasSubmenu ? '#3B2718' : 'rgba(255,255,255,0.82)',
+                fontWeight: isActive ? 700 : 500, transition: 'all 0.2s',
+                boxShadow: isActive && !hasSubmenu ? '0 4px 12px rgba(234,179,8,0.28)' : 'none',
                 justifyContent: collapsed ? 'center' : 'flex-start'
-              }} className="nav-item-hover">
-                <div style={{ color: isActive ? 'var(--accent)' : 'var(--text-muted)' }} title={collapsed ? item.title : undefined}>
+              }} className="nav-item-brown">
+                <div style={{ color: isActive && !hasSubmenu ? '#3B2718' : 'rgba(255,255,255,0.7)' }} title={collapsed ? item.title : undefined}>
                   {item.icon}
                 </div>
                 {!collapsed && <span style={{ flex: 1 }}>{item.title}</span>}
@@ -174,13 +171,13 @@ export default function Sidebar({ collapsed, setCollapsed, mobileOpen, setMobile
                       const isSubActive = pathname === sub.href || pathname.startsWith(sub.href + '/');
                       return (
                         <Link key={sIdx} href={sub.href!} style={{ textDecoration: 'none' }}>
-                          <div style={{ 
+                          <div style={{
                             padding: '8px 12px', borderRadius: 'var(--radius-sm)', fontSize: 13,
-                            background: isSubActive ? 'rgba(37,99,235,0.05)' : 'transparent',
-                            color: isSubActive ? 'var(--accent)' : 'var(--text-muted)',
+                            background: isSubActive ? 'rgba(234,179,8,0.18)' : 'transparent',
+                            color: isSubActive ? 'var(--gold-light)' : 'rgba(255,255,255,0.6)',
                             fontWeight: isSubActive ? 600 : 500, display: 'flex', alignItems: 'center',
                             transition: 'all 0.2s'
-                          }} className="nav-subitem-hover">
+                          }} className="nav-subitem-brown">
                             <span style={{ flex: 1 }}>{sub.title}</span>
                             {renderBadge(sub.badge)}
                           </div>
@@ -195,25 +192,25 @@ export default function Sidebar({ collapsed, setCollapsed, mobileOpen, setMobile
         </nav>
 
         {/* User Profile */}
-        <div style={{ padding: '16px 12px', borderTop: '1px solid var(--border)' }}>
-          <div 
+        <div style={{ padding: '16px 12px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          <div
             onClick={() => setShowRoleSwitcher(!showRoleSwitcher)}
-            style={{ 
-              display: 'flex', alignItems: 'center', gap: 12, padding: '10px', 
-              borderRadius: 'var(--radius-md)', background: 'var(--bg-input)', cursor: 'pointer',
+            style={{
+              display: 'flex', alignItems: 'center', gap: 12, padding: '10px',
+              borderRadius: 'var(--radius-md)', background: 'var(--sidebar-hover)', cursor: 'pointer',
               justifyContent: collapsed ? 'center' : 'flex-start'
             }}
           >
-            <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--accent)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+            <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary), var(--success))', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
               {currentUser.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
             </div>
             {!collapsed && (
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentUser.name}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ROLE_LABELS[currentUser.role]}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentUser.name}</div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ROLE_LABELS[currentUser.role]}</div>
               </div>
             )}
-            {!collapsed && <Users size={14} color="var(--text-muted)" />}
+            {!collapsed && <Users size={14} color="rgba(255,255,255,0.6)" />}
           </div>
 
           {showRoleSwitcher && !collapsed && (

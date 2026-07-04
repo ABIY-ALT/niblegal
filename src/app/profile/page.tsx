@@ -38,14 +38,14 @@ export default function ProfilePage() {
 
       {/* Profile Header Banner */}
       <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 20 }}>
-        <div style={{ height: 120, background: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #1d4ed8 100%)', position: 'relative' }}>
+        <div style={{ height: 120, background: 'linear-gradient(135deg, #3B2718 0%, #6C4A28 55%, #EAB308 100%)', position: 'relative' }}>
           <div style={{ position: 'absolute', inset: 0, opacity: 0.3, backgroundImage: 'radial-gradient(circle at 20% 50%, rgba(255,255,255,0.1) 0%, transparent 60%), radial-gradient(circle at 80% 20%, rgba(255,255,255,0.08) 0%, transparent 40%)' }} />
         </div>
 
         <div style={{ padding: '0 32px 24px', position: 'relative' }}>
           {/* Avatar */}
           <div style={{ position: 'relative', display: 'inline-block', marginTop: -40 }}>
-            <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent), #1d4ed8)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, fontWeight: 700, border: '4px solid var(--bg-card)', boxShadow: 'var(--shadow)' }}>
+            <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary), var(--sidebar))', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, fontWeight: 700, border: '4px solid var(--bg-card)', boxShadow: 'var(--shadow)' }}>
               {initials}
             </div>
             <button style={{ position: 'absolute', bottom: 0, right: 0, width: 26, height: 26, borderRadius: '50%', background: 'var(--bg-surface)', border: '2px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>

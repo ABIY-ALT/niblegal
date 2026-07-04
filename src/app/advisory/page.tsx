@@ -1,412 +1,270 @@
 'use client';
 
-import { useState, useMemo } from 'react';
 import Link from 'next/link';
-import { advisoryRequests } from '@/data/store';
-import { 
-  ADVISORY_STATUS_COLORS, 
-  ADVISORY_STATUS_LABELS, 
-  ADVISORY_CATEGORY_LABELS, 
-  formatDate, 
-  URGENCY_COLORS 
-} from '@/utils/formatters';
-import { 
-  Search, Plus, Filter, Download, ArrowUpDown, 
-  ChevronLeft, ChevronRight, CheckSquare, Square, MoreHorizontal, Clock
+import { useQuery } from '@tanstack/react-query';
+import { format } from 'date-fns';
+import {
+  BarChart, Bar, PieChart, Pie, Cell, LineChart, Line,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+} from 'recharts';
+import {
+  Plus, Search, BookOpen, FileText, UserCheck, FileEdit, Eye,
+  Gavel, CheckCircle2, AlertTriangle, Clock, Users, TrendingUp,
 } from 'lucide-react';
-import type { AdvisoryRequest } from '@/types';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { PriorityBadge } from '@/components/advisory/PriorityBadge';
 
-export default function AdvisoryListPage() {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState('all');
-  const [selectedUrgency, setSelectedUrgency] = useState('all');
-  const [selectedDepartment, setSelectedDepartment] = useState('all');
-  const [sortColumn, setSortColumn] = useState<string>('slaDeadline');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [showFilters, setShowFilters] = useState(true);
-
-  const departments = useMemo(() => {
-    const deptSet = new Set<string>(advisoryRequests.map(r => r.requestingDepartment));
-    return Array.from(deptSet);
-  }, []);
-
-  const filtered = useMemo(() => {
-    return advisoryRequests.filter(r => {
-      const matchesSearch = 
-        r.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        r.id.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = selectedStatus === 'all' || r.status === selectedStatus;
-      const matchesUrgency = selectedUrgency === 'all' || r.urgency === selectedUrgency;
-      const matchesDepartment = selectedDepartment === 'all' || r.requestingDepartment === selectedDepartment;
-      return matchesSearch && matchesStatus && matchesUrgency && matchesDepartment;
-    });
-  }, [searchTerm, selectedStatus, selectedUrgency, selectedDepartment]);
-
-  const sorted = useMemo(() => {
-    return [...filtered].sort((a, b) => {
-      let aVal, bVal;
-      switch(sortColumn) {
-        case 'id': aVal = a.id; bVal = b.id; break;
-        case 'title': aVal = a.title; bVal = b.title; break;
-        case 'department': aVal = a.requestingDepartment; bVal = b.requestingDepartment; break;
-        case 'category': aVal = a.category; bVal = b.category; break;
-        case 'status': aVal = a.status; bVal = b.status; break;
-        case 'priority': aVal = a.urgency; bVal = b.urgency; break;
-        case 'slaDeadline': 
-          aVal = new Date(a.slaDeadline).getTime();
-          bVal = new Date(b.slaDeadline).getTime();
-          break;
-        default: aVal = a.id; bVal = b.id;
-      }
-      if (sortDirection === 'asc') {
-        return aVal > bVal ? 1 : -1;
-      } else {
-        return aVal < bVal ? 1 : -1;
-      }
-    });
-  }, [filtered, sortColumn, sortDirection]);
-
-  const paginated = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return sorted.slice(startIndex, startIndex + itemsPerPage);
-  }, [sorted, currentPage, itemsPerPage]);
-
-  const totalPages = Math.ceil(sorted.length / itemsPerPage);
-
-  const handleSort = (column: string) => {
-    if (sortColumn === column) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortColumn(column);
-      setSortDirection('asc');
-    }
+interface StatsResponse {
+  summary: {
+    total: number;
+    newRequests: number;
+    assigned: number;
+    drafting: number;
+    pendingReview: number;
+    pendingApproval: number;
+    closed: number;
+    overdue: number;
+    slaMet: number;
+    slaBreached: number;
   };
+  byDepartment: { name: string; count: number }[];
+  byCategory: { name: string; count: number }[];
+  monthlyTrends: { month: string; count: number }[];
+  criticalRequests: { id: string; requestNumber: string; subject: string; priority: string; slaDeadline: string; status: string }[];
+  upcomingDeadlines: { id: string; requestNumber: string; subject: string; slaDeadline: string; status: string }[];
+  recentHistory: { id: string; description: string; createdAt: string; actor: { firstName: string; lastName: string } | null; legalRequest: { id: string; requestNumber: string } }[];
+  officerWorkload: { name: string; count: number }[];
+}
 
-  const toggleSelectAll = () => {
-    if (selectedIds.length === paginated.length) {
-      setSelectedIds([]);
-    } else {
-      setSelectedIds(paginated.map(r => r.id));
-    }
-  };
+const PIE_COLORS = ['var(--success)', 'var(--danger)'];
 
-  const toggleSelect = (id: string) => {
-    setSelectedIds(prev => 
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-    );
-  };
+export default function LegalAdvisoryDashboardPage() {
+  const { data: currentUser } = useCurrentUser();
 
-  const exportCSV = () => {
-    const dataToExport = selectedIds.length > 0 
-      ? advisoryRequests.filter(r => selectedIds.includes(r.id))
-      : filtered;
-      
-    const headers = ['Request ID', 'Subject', 'Department', 'Category', 'Status', 'Priority', 'SLA Deadline', 'Created Date'];
-    const csvContent = [
-      headers.join(','),
-      ...dataToExport.map(r => [
-        r.id,
-        `"${r.title.replace(/"/g, '""')}"`,
-        `"${r.requestingDepartment.replace(/"/g, '""')}"`,
-        `"${ADVISORY_CATEGORY_LABELS[r.category]}"`,
-        `"${ADVISORY_STATUS_LABELS[r.status]}"`,
-        `"${r.urgency}"`,
-        r.slaDeadline ? formatDate(r.slaDeadline) : '',
-        r.createdAt ? formatDate(r.createdAt) : ''
-      ].join(','))
-    ].join('\n');
+  const { data: stats, isLoading } = useQuery({
+    queryKey: ['advisory-stats'],
+    queryFn: async () => {
+      const res = await fetch('/api/advisory/stats');
+      if (!res.ok) throw new Error('Failed to load stats');
+      return res.json() as Promise<StatsResponse>;
+    },
+  });
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', 'nib-legal-requests.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+  const { data: myQueue } = useQuery({
+    queryKey: ['advisory-my-queue', currentUser?.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/advisory/requests?assigneeId=${currentUser?.id}&excludeClosed=1&limit=5`);
+      const json = await res.json();
+      return json.data as { id: string; requestNumber: string; subject: string; status: string; priority: string }[];
+    },
+    enabled: !!currentUser?.id,
+  });
 
-  const exportPDF = () => {
-    alert('PDF export would be implemented with a library like jsPDF or react-pdf. For now, this is a placeholder.');
-  };
+  if (isLoading || !stats) {
+    return <div className="text-center py-20"><div className="spinner-sm border-accent" /></div>;
+  }
+
+  const s = stats.summary;
+  const slaPieData = [
+    { name: 'SLA Met', value: s.slaMet },
+    { name: 'SLA Breached', value: s.slaBreached },
+  ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div className="flex flex-col gap-6">
+      <div className="flex justify-between items-center flex-wrap gap-3">
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, margin: '0 0 4px 0' }}>Legal Advisory (LAHD)</h1>
-          <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: 13 }}>Manage legal advice requests, advisory opinions, and legal support.</p>
+          <h1 className="text-2xl font-bold mb-1">Legal Advisory Help Desk</h1>
+          <p className="text-muted text-sm">Overview of advisory requests, SLA performance, and team workload.</p>
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button className="btn btn-secondary" onClick={() => setShowFilters(!showFilters)}>
-            <Filter size={16} style={{ marginRight: 6 }} /> Filters
-          </button>
-          <div style={{ position: 'relative' }}>
-            <button className="btn btn-secondary">
-              <Download size={16} style={{ marginRight: 6 }} /> Export
-            </button>
-            <div style={{ 
-              position: 'absolute', right: 0, top: '100%', marginTop: 8,
-              background: 'var(--bg-card)', border: '1px solid var(--border)',
-              borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-md)',
-              padding: 4, minWidth: 180, zIndex: 10
-            }}>
-              <button 
-                style={{ 
-                  width: '100%', textAlign: 'left', padding: '8px 12px',
-                  border: 'none', background: 'transparent', cursor: 'pointer',
-                  borderRadius: 'var(--radius-sm)'
-                }}
-                className="hover-card"
-                onClick={exportCSV}
-              >
-                Export Excel / CSV
-              </button>
-              <button 
-                style={{ 
-                  width: '100%', textAlign: 'left', padding: '8px 12px',
-                  border: 'none', background: 'transparent', cursor: 'pointer',
-                  borderRadius: 'var(--radius-sm)'
-                }}
-                className="hover-card"
-                onClick={exportPDF}
-              >
-                Export PDF
-              </button>
-            </div>
-          </div>
-          <Link href="/advisory/new" className="btn btn-primary">
-            <Plus size={16} /> New Request
-          </Link>
+        <div className="flex gap-3">
+          <Link href="/advisory/list" className="btn btn-secondary"><Search size={16} /> Search Requests</Link>
+          <Link href="/knowledge" className="btn btn-secondary"><BookOpen size={16} /> Knowledge Repository</Link>
+          <Link href="/advisory/new" className="btn btn-primary"><Plus size={16} /> New Advisory Request</Link>
         </div>
       </div>
 
-      {selectedIds.length > 0 && (
-        <div style={{ 
-          display: 'flex', alignItems: 'center', gap: 16, 
-          padding: '12px 16px', background: 'var(--bg-input)', 
-          borderRadius: 'var(--radius)', border: '1px solid var(--border)' 
-        }}>
-          <span style={{ fontWeight: 600 }}>{selectedIds.length} requests selected</span>
-          <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-            <button className="btn btn-secondary btn-sm">Bulk Update Status</button>
-            <button className="btn btn-secondary btn-sm">Bulk Export</button>
-            <button 
-              className="btn btn-ghost btn-sm"
-              onClick={() => setSelectedIds([])}
-            >
-              Clear
-            </button>
+      <div className="stat-grid">
+        <div className="stat-card accent"><div className="text-2xl font-bold">{s.total}</div><div className="text-xs text-muted mt-1">Total Requests</div></div>
+        <div className="stat-card info"><div className="text-2xl font-bold">{s.newRequests}</div><div className="text-xs text-muted mt-1">New Requests</div></div>
+        <div className="stat-card info"><div className="text-2xl font-bold">{s.assigned}</div><div className="text-xs text-muted mt-1">Assigned</div></div>
+        <div className="stat-card accent"><div className="text-2xl font-bold">{s.drafting}</div><div className="text-xs text-muted mt-1">Draft Opinions</div></div>
+        <div className="stat-card warning"><div className="text-2xl font-bold">{s.pendingReview}</div><div className="text-xs text-muted mt-1">Pending Review</div></div>
+        <div className="stat-card warning"><div className="text-2xl font-bold">{s.pendingApproval}</div><div className="text-xs text-muted mt-1">Pending Approval</div></div>
+        <div className="stat-card success"><div className="text-2xl font-bold">{s.closed}</div><div className="text-xs text-muted mt-1">Closed Requests</div></div>
+        <div className="stat-card danger"><div className="text-2xl font-bold">{s.overdue}</div><div className="text-xs text-muted mt-1">Overdue Requests</div></div>
+        <div className="stat-card success"><div className="text-2xl font-bold">{s.slaMet}</div><div className="text-xs text-muted mt-1">SLA Met</div></div>
+        <div className="stat-card danger"><div className="text-2xl font-bold">{s.slaBreached}</div><div className="text-xs text-muted mt-1">SLA Breached</div></div>
+      </div>
+
+      <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+        <div className="card">
+          <div className="card-header"><span className="card-title">Requests by Department</span></div>
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={stats.byDepartment}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-20} textAnchor="end" height={60} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+              <Tooltip />
+              <Bar dataKey="count" fill="var(--accent)" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="card">
+          <div className="card-header"><span className="card-title">Requests by Category</span></div>
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={stats.byCategory} layout="vertical" margin={{ left: 40 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
+              <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={120} />
+              <Tooltip />
+              <Bar dataKey="count" fill="var(--info)" radius={[0, 4, 4, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="card">
+          <div className="card-header"><span className="card-title">SLA Performance</span></div>
+          <ResponsiveContainer width="100%" height={240}>
+            <PieChart>
+              <Pie data={slaPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
+                {slaPieData.map((entry, i) => <Cell key={entry.name} fill={PIE_COLORS[i]} />)}
+              </Pie>
+              <Tooltip />
+              <Legend />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="card">
+          <div className="card-header"><span className="card-title">Monthly Advisory Requests</span></div>
+          <ResponsiveContainer width="100%" height={240}>
+            <LineChart data={stats.monthlyTrends}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+              <Tooltip />
+              <Line type="monotone" dataKey="count" stroke="var(--gold)" strokeWidth={2} dot={{ r: 3 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title"><UserCheck size={15} className="inline mr-2" />My Work Queue</span>
+          </div>
+          {!myQueue || myQueue.length === 0 ? (
+            <div className="empty-state"><p>Nothing assigned to you right now.</p></div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {myQueue.map((r) => (
+                <Link key={r.id} href={`/advisory/${r.id}`} className="flex justify-between items-center text-sm p-2 rounded-md hover-card border border-transparent">
+                  <span className="truncate">{r.requestNumber} — {r.subject}</span>
+                  <PriorityBadge priority={r.priority as never} />
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title"><AlertTriangle size={15} className="inline mr-2" />Critical Legal Requests</span>
+          </div>
+          {stats.criticalRequests.length === 0 ? (
+            <div className="empty-state"><p>No critical or urgent requests open.</p></div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {stats.criticalRequests.map((r) => (
+                <Link key={r.id} href={`/advisory/${r.id}`} className="flex justify-between items-center text-sm p-2 rounded-md hover-card border border-transparent">
+                  <span className="truncate">{r.requestNumber} — {r.subject}</span>
+                  <PriorityBadge priority={r.priority as never} />
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title"><Clock size={15} className="inline mr-2" />Upcoming SLA Deadlines</span>
+          </div>
+          {stats.upcomingDeadlines.length === 0 ? (
+            <div className="empty-state"><p>No open requests with an SLA deadline.</p></div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {stats.upcomingDeadlines.map((r) => (
+                <Link key={r.id} href={`/advisory/${r.id}`} className="flex justify-between items-center text-sm p-2 rounded-md hover-card border border-transparent">
+                  <span className="truncate">{r.requestNumber} — {r.subject}</span>
+                  <span className="text-xs text-muted">{format(new Date(r.slaDeadline), 'MMM d, HH:mm')}</span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title"><TrendingUp size={15} className="inline mr-2" />Recent Activities</span>
+          </div>
+          {stats.recentHistory.length === 0 ? (
+            <div className="empty-state"><p>No recent activity.</p></div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {stats.recentHistory.map((h) => (
+                <Link key={h.id} href={`/advisory/${h.legalRequest.id}`} className="text-sm p-2 rounded-md hover-card border border-transparent">
+                  <div className="truncate">{h.description}</div>
+                  <div className="text-xs text-muted">{h.actor ? `${h.actor.firstName} ${h.actor.lastName}` : 'System'} · {format(new Date(h.createdAt), 'MMM d, HH:mm')}</div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title"><Users size={15} className="inline mr-2" />Officer Workload</span>
+          </div>
+          {stats.officerWorkload.length === 0 ? (
+            <div className="empty-state"><p>No active caseloads.</p></div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {stats.officerWorkload.map((o) => (
+                <div key={o.name} className="flex justify-between items-center text-sm p-2">
+                  <span>{o.name}</span>
+                  <span className="badge status-active">{o.count} active</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title"><FileText size={15} className="inline mr-2" />Department Statistics</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            {stats.byDepartment.map((d) => (
+              <div key={d.name} className="flex justify-between items-center text-sm p-2">
+                <span>{d.name}</span>
+                <span className="badge status-active">{d.count}</span>
+              </div>
+            ))}
           </div>
         </div>
-      )}
+      </div>
 
       <div className="card">
-        {showFilters && (
-          <div style={{ 
-            display: 'flex', gap: 12, marginBottom: 20, 
-            paddingBottom: 20, borderBottom: '1px solid var(--border-light)',
-            flexWrap: 'wrap' 
-          }}>
-            <div style={{ position: 'relative', flex: 1, minWidth: 280, maxWidth: 400 }}>
-              <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-              <input 
-                type="text" 
-                className="form-control" 
-                placeholder="Search by ID or subject..." 
-                style={{ paddingLeft: 36 }}
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-              />
-            </div>
-            <select 
-              className="form-control" 
-              style={{ width: 180 }}
-              value={selectedStatus}
-              onChange={e => setSelectedStatus(e.target.value)}
-            >
-              <option value="all">All Statuses</option>
-              {Object.entries(ADVISORY_STATUS_LABELS).map(([k, v]) => (
-                <option key={k} value={k}>{v as string}</option>
-              ))}
-            </select>
-            <select 
-              className="form-control" 
-              style={{ width: 180 }}
-              value={selectedUrgency}
-              onChange={e => setSelectedUrgency(e.target.value)}
-            >
-              <option value="all">All Priorities</option>
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-              <option value="critical">Critical</option>
-            </select>
-            <select 
-              className="form-control" 
-              style={{ width: 180 }}
-              value={selectedDepartment}
-              onChange={e => setSelectedDepartment(e.target.value)}
-            >
-              <option value="all">All Departments</option>
-              {departments.map(dept => (
-                <option key={dept} value={dept}>{dept}</option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        <div className="table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th style={{ width: 40 }}>
-                  <button 
-                    onClick={toggleSelectAll} 
-                    style={{ 
-                      background: 'none', border: 'none', cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      padding: 4
-                    }}
-                  >
-                    {selectedIds.length === paginated.length && paginated.length > 0 
-                      ? <CheckSquare size={18} color="var(--accent)" /> 
-                      : <Square size={18} color="var(--text-muted)" />}
-                  </button>
-                </th>
-                <th onClick={() => handleSort('id')} style={{ cursor: 'pointer' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    Request ID {sortColumn === 'id' && <ArrowUpDown size={14} />}
-                  </div>
-                </th>
-                <th onClick={() => handleSort('title')} style={{ cursor: 'pointer' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    Subject {sortColumn === 'title' && <ArrowUpDown size={14} />}
-                  </div>
-                </th>
-                <th onClick={() => handleSort('department')} style={{ cursor: 'pointer' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    Department {sortColumn === 'department' && <ArrowUpDown size={14} />}
-                  </div>
-                </th>
-                <th onClick={() => handleSort('category')} style={{ cursor: 'pointer' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    Category {sortColumn === 'category' && <ArrowUpDown size={14} />}
-                  </div>
-                </th>
-                <th onClick={() => handleSort('status')} style={{ cursor: 'pointer' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    Status {sortColumn === 'status' && <ArrowUpDown size={14} />}
-                  </div>
-                </th>
-                <th onClick={() => handleSort('priority')} style={{ cursor: 'pointer' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    Priority {sortColumn === 'priority' && <ArrowUpDown size={14} />}
-                  </div>
-                </th>
-                <th onClick={() => handleSort('slaDeadline')} style={{ cursor: 'pointer' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    SLA Deadline {sortColumn === 'slaDeadline' && <ArrowUpDown size={14} />}
-                  </div>
-                </th>
-                <th style={{ width: 40 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginated.map(request => {
-                const isSlaBreached = new Date(request.slaDeadline) < new Date() && 
-                  !['dispatched', 'closed'].includes(request.status);
-                
-                return (
-                  <tr key={request.id}>
-                    <td>
-                      <button 
-                        onClick={() => toggleSelect(request.id)}
-                        style={{ 
-                          background: 'none', border: 'none', cursor: 'pointer',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          padding: 4
-                        }}
-                      >
-                        {selectedIds.includes(request.id) 
-                          ? <CheckSquare size={18} color="var(--accent)" /> 
-                          : <Square size={18} color="var(--text-muted)" />}
-                      </button>
-                    </td>
-                    <td style={{ fontSize: '12px', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
-                      <Link href={`/advisory/opinion/${request.id}`} style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>{request.id}</Link>
-                    </td>
-                    <td style={{ fontSize: 13, fontWeight: 500 }}>{request.title}</td>
-                    <td style={{ fontSize: 13 }}>{request.requestingDepartment}</td>
-                    <td style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{ADVISORY_CATEGORY_LABELS[request.category]}</td>
-                    <td>
-                      <span className={`badge ${(ADVISORY_STATUS_COLORS as any)[request.status]}`}>{(ADVISORY_STATUS_LABELS as any)[request.status]}</span>
-                    </td>
-                    <td>
-                      <span className={`badge ${URGENCY_COLORS[request.urgency]}`}>{request.urgency.charAt(0).toUpperCase() + request.urgency.slice(1)}</span>
-                    </td>
-                    <td style={{ fontSize: 12, color: isSlaBreached ? 'var(--danger)' : 'inherit' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {isSlaBreached && <Clock size={14} />}
-                        {formatDate(request.slaDeadline)}
-                      </div>
-                    </td>
-                    <td>
-                      <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
-                        <MoreHorizontal size={16} color="var(--text-muted)" />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {sorted.length === 0 && (
-                <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>No legal requests found.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="card-header"><span className="card-title">Quick Access</span></div>
+        <div className="flex gap-3 flex-wrap">
+          <Link href="/advisory/assigned" className="btn btn-secondary btn-sm"><FileEdit size={14} /> Assigned Requests</Link>
+          <Link href="/advisory/review" className="btn btn-secondary btn-sm"><Eye size={14} /> Pending Review</Link>
+          <Link href="/advisory/approval" className="btn btn-secondary btn-sm"><Gavel size={14} /> Pending Approval</Link>
+          <Link href="/advisory/dispatched" className="btn btn-secondary btn-sm"><CheckCircle2 size={14} /> Dispatched</Link>
         </div>
-
-        {totalPages > 1 && (
-          <div style={{ 
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            marginTop: 20, paddingTop: 20, borderTop: '1px solid var(--border-light)'
-          }}>
-            <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-              Showing {((currentPage - 1) * itemsPerPage + 1)} to {Math.min(currentPage * itemsPerPage, sorted.length)} of {sorted.length} requests
-            </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <button 
-                className="btn btn-ghost btn-sm"
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-              >
-                <ChevronLeft size={16} />
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                <button
-                  key={page}
-                  className={currentPage === page ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
-                  onClick={() => setCurrentPage(page)}
-                  style={{ minWidth: 32 }}
-                >
-                  {page}
-                </button>
-              ))}
-              <button 
-                className="btn btn-ghost btn-sm"
-                disabled={currentPage === totalPages}
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

@@ -111,6 +111,13 @@ export function setCurrentUser(userId: string) {
   if (u) currentUser = u;
 }
 
+export function logout() {
+  currentUser = users[0]; // Reset to default or handle null if typed. Since it's not null typed, use a default.
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('nib-currentUser');
+  }
+}
+
 // User Mutations
 export function addUser(user: Omit<User, 'id' | 'createdAt'>) {
   const newUser: User = {

@@ -9,7 +9,7 @@ type Theme = 'dark' | 'light' | 'system';
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [theme, setTheme] = useState<Theme>('dark');
+  const [theme, setTheme] = useState<Theme>('light');
   const [mounted, setMounted] = useState(false);
   
   // Layout state
@@ -43,7 +43,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // We'll add classes and inline styles that CSS can override.
 
   return (
-    <div className="app-shell" style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg-body)' }}>
+    <div className="app-shell" style={{ display: 'flex', minHeight: '100vh', background: 'var(--background)' }}>
       
       <Sidebar 
         collapsed={sidebarCollapsed} 
@@ -52,8 +52,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         setMobileOpen={setMobileOpen} 
       />
 
-      <div 
-        className={`main-area flex-1 flex flex-col min-h-screen transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] w-full ${sidebarCollapsed ? 'md:ml-[80px]' : 'md:ml-[280px]'} ml-0`}
+      <div
+        className={`main-area flex flex-col min-h-screen w-full ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}
       >
         <TopNav 
           theme={theme} 

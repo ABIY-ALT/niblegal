@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { Search, Bell, Sun, Moon, Monitor, Plus, ChevronRight, Menu } from 'lucide-react';
-import { currentUser } from '@/data/store';
+import { currentUser, logout } from '@/data/store';
 import { ROLE_LABELS } from '@/utils/formatters';
 
 interface TopNavProps {
@@ -15,6 +15,7 @@ interface TopNavProps {
 
 export default function TopNav({ theme, setTheme, setMobileOpen }: TopNavProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [searchFocused, setSearchFocused] = useState(false);
 
   // Generate Breadcrumbs
@@ -32,8 +33,12 @@ export default function TopNav({ theme, setTheme, setMobileOpen }: TopNavProps) 
   const breadcrumbs = generateBreadcrumbs();
 
   return (
-    <header style={{ 
-      height: 70, background: 'var(--bg-card)', borderBottom: '1px solid var(--border)',
+    <header style={{
+      height: 70,
+      background: 'color-mix(in srgb, var(--bg-card) 82%, transparent)',
+      backdropFilter: 'saturate(180%) blur(12px)',
+      WebkitBackdropFilter: 'saturate(180%) blur(12px)',
+      borderBottom: '1px solid var(--border)',
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       padding: '0 24px', position: 'sticky', top: 0, zIndex: 40
     }}>
@@ -71,11 +76,11 @@ export default function TopNav({ theme, setTheme, setMobileOpen }: TopNavProps) 
             placeholder="Search contracts, requests, officers..." 
             onFocus={() => setSearchFocused(true)}
             onBlur={() => setSearchFocused(false)}
-            style={{ 
-              width: '100%', padding: '10px 16px 10px 44px', borderRadius: 20, 
-              border: `1px solid ${searchFocused ? 'var(--accent)' : 'var(--border)'}`, 
-              background: 'var(--bg-body)', color: 'var(--text-primary)', fontSize: 13, outline: 'none',
-              boxShadow: searchFocused ? '0 0 0 3px rgba(37,99,235,0.1)' : 'none',
+            style={{
+              width: '100%', padding: '10px 16px 10px 44px', borderRadius: 20,
+              border: `1px solid ${searchFocused ? 'var(--accent)' : 'var(--border)'}`,
+              background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 13, outline: 'none',
+              boxShadow: searchFocused ? '0 0 0 3px var(--accent-glow)' : 'none',
               transition: 'all 0.2s'
             }}
           />
@@ -89,10 +94,10 @@ export default function TopNav({ theme, setTheme, setMobileOpen }: TopNavProps) 
         {['manager', 'legal_officer', 'requesting_organ'].includes(currentUser.role) && (
           <div className="dropdown" style={{ position: 'relative' }}>
             <Link href={currentUser.role === 'requesting_organ' ? '/contracts/new' : '/contracts/new'} style={{ textDecoration: 'none' }}>
-              <button style={{ 
+              <button style={{
                 display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px',
-                background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 20,
-                fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 4px 10px rgba(37,99,235,0.2)'
+                background: 'var(--primary)', color: '#3B2718', border: 'none', borderRadius: 20,
+                fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 10px var(--accent-glow)'
               }} className="hover:scale-105 transition-all">
                 <Plus size={16} /> New
               </button>
@@ -123,15 +128,65 @@ export default function TopNav({ theme, setTheme, setMobileOpen }: TopNavProps) 
         </Link>
 
         {/* Profile Dropdown Toggle */}
-        <Link href="/profile" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', paddingLeft: 8, borderLeft: '1px solid var(--border)' }}>
-          <div style={{ textAlign: 'right', display: 'none' }} className="sm:block">
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>{currentUser.name}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{ROLE_LABELS[currentUser.role]}</div>
+        <div style={{ position: 'relative' }}>
+          <button 
+            onClick={() => {
+              const dropdown = document.getElementById('profile-dropdown');
+              if (dropdown) {
+                dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+              }
+            }}
+            style={{ 
+              display: 'flex', alignItems: 'center', gap: 10, paddingLeft: 8, 
+              borderLeft: '1px solid var(--border)', background: 'none', border: 'none', 
+              borderLeftWidth: '1px', borderLeftColor: 'var(--border)', borderLeftStyle: 'solid',
+              cursor: 'pointer' 
+            }}
+          >
+            <div style={{ textAlign: 'right', display: 'none' }} className="sm:block">
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>{currentUser.name}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{ROLE_LABELS[currentUser.role]}</div>
+            </div>
+            <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary), var(--success))', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700 }}>
+              {currentUser.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+            </div>
+          </button>
+          
+          <div 
+            id="profile-dropdown"
+            className="card"
+            style={{
+              display: 'none',
+              position: 'absolute', top: '100%', right: 0, marginTop: 12, width: 220,
+              padding: 8, zIndex: 50, boxShadow: '0 10px 40px rgba(0,0,0,0.1)'
+            }}
+          >
+            <Link 
+              href="/profile" 
+              className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-secondary hover:bg-card-hover hover:text-primary transition-colors"
+              onClick={() => { document.getElementById('profile-dropdown')!.style.display = 'none'; }}
+            >
+              <div className="w-8 h-8 rounded-full bg-accent/10 flex items-center justify-center text-accent">
+                {currentUser.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+              </div>
+              My Profile
+            </Link>
+            
+            <div className="h-px bg-border my-2" />
+            
+            <button 
+              onClick={() => {
+                logout();
+                document.getElementById('profile-dropdown')!.style.display = 'none';
+                router.push('/login');
+              }}
+              className="flex w-full items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-danger hover:bg-danger/10 transition-colors bg-transparent border-none cursor-pointer"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+              Sign Out
+            </button>
           </div>
-          <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--accent)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700 }}>
-            {currentUser.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-          </div>
-        </Link>
+        </div>
       </div>
     </header>
   );

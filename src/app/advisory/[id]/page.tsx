@@ -1,380 +1,496 @@
 'use client';
 
-import { useState, use } from 'react';
-import { notFound } from 'next/navigation';
+import { use, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { advisoryRequests, currentUser, advanceAdvisoryStatus, generateAuditEntry, updateAdvisoryRequest, USERS } from '@/data/store';
-import { ADVISORY_STATUS_LABELS, ADVISORY_STATUS_COLORS, ADVISORY_CATEGORY_LABELS, URGENCY_COLORS, formatDateTime, formatDate, timeAgo } from '@/utils/formatters';
-import { ArrowLeft, CheckCircle, Clock, FileText, Scale, Send, Shield, User, Paperclip, MessageSquare, AlertCircle, RefreshCw, PenTool, Edit3, CheckSquare, XCircle, Mail, Eye } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { format } from 'date-fns';
+import {
+  Activity,
+  Archive,
+  ArrowLeft,
+  CheckCircle2,
+  Clock3,
+  FileEdit,
+  FileText,
+  FolderKanban,
+  Gavel,
+  History,
+  Info,
+  MessageSquare,
+  Paperclip,
+  RotateCcw,
+  Send,
+  ShieldCheck,
+  Sparkles,
+  Truck,
+  UserCog,
+  Users,
+  XCircle,
+  Eye,
+} from 'lucide-react';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { StatusBadge } from '@/components/advisory/StatusBadge';
+import { PriorityBadge } from '@/components/advisory/PriorityBadge';
+import { SlaCountdown } from '@/components/advisory/SlaCountdown';
+import { WorkflowTimeline } from '@/components/advisory/WorkflowTimeline';
+import { ActivityTimeline } from '@/components/advisory/ActivityTimeline';
+import { AuditTrailTable } from '@/components/advisory/AuditTrailTable';
+import { CommentThread } from '@/components/advisory/CommentThread';
+import { AttachmentManager } from '@/components/advisory/AttachmentManager';
+import type { LegalRequestDetail } from '@/types/advisory';
 
-export default function AdvisoryDetailsPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params);
-  const id = decodeURIComponent(resolvedParams.id);
-  const reqInitial = advisoryRequests.find(r => r.id === id);
+const TABS = [
+  'overview', 'workflow', 'attachments', 'comments', 'opinion',
+  'approvals', 'timeline', 'history', 'audit', 'metadata',
+] as const;
+type Tab = (typeof TABS)[number];
 
-  if (!reqInitial) return notFound();
+const TAB_META: Record<Tab, { label: string; icon: ReactNode }> = {
+  overview: { label: 'Overview', icon: <Info /> },
+  workflow: { label: 'Workflow', icon: <FolderKanban /> },
+  attachments: { label: 'Attachments', icon: <Paperclip /> },
+  comments: { label: 'Comments', icon: <MessageSquare /> },
+  opinion: { label: 'Legal Opinion', icon: <FileEdit /> },
+  approvals: { label: 'Approvals', icon: <ShieldCheck /> },
+  timeline: { label: 'Timeline', icon: <Activity /> },
+  history: { label: 'History', icon: <History /> },
+  audit: { label: 'Audit Trail', icon: <Gavel /> },
+  metadata: { label: 'Metadata', icon: <FileText /> },
+};
 
-  const [req, setReq] = useState(reqInitial);
-  const [activeTab, setActiveTab] = useState<'overview' | 'assignment' | 'opinion' | 'workflow' | 'audit'>('overview');
-  
-  // Assignment State
-  const [assignee, setAssignee] = useState(req.assignedOfficer || '');
-  const [isAssigning, setIsAssigning] = useState(false);
+function clean(value: string) {
+  return value.replace(/_/g, ' ');
+}
 
-  // Opinion State
-  const [opinionText, setOpinionText] = useState(req.legalOpinion || '');
-  const [isSaving, setIsSaving] = useState(false);
-  
-  // Review State
-  const [reviewComment, setReviewComment] = useState('');
+function dateOrDash(value: string | null, pattern = 'MMM d, yyyy') {
+  return value ? format(new Date(value), pattern) : '—';
+}
 
-  const isManager = currentUser.role === 'manager';
-  const isOfficer = currentUser.role === 'legal_officer';
-  const isAssignedToMe = req.assignedOfficer === currentUser.name;
+function initials(firstName: string, lastName: string) {
+  return `${firstName[0] ?? ''}${lastName[0] ?? ''}`.toUpperCase();
+}
 
-  const handleAssign = async () => {
-    setIsAssigning(true);
-    await new Promise(r => setTimeout(r, 600));
-    updateAdvisoryRequest(req.id, { assignedOfficer: assignee });
-    if (req.status === 'submitted') {
-      advanceAdvisoryStatus(req.id, 'assigned', currentUser);
+function KpiCard({ icon, label, value, meta }: { icon: ReactNode; label: string; value: ReactNode; meta: string }) {
+  return (
+    <div className="enterprise-kpi">
+      <div className="enterprise-kpi-head">
+        <div>
+          <div className="enterprise-kpi-label">{label}</div>
+          <div className="enterprise-kpi-value">{value}</div>
+        </div>
+        <div className="enterprise-kpi-icon">{icon}</div>
+      </div>
+      <div className="enterprise-kpi-meta">{meta}</div>
+    </div>
+  );
+}
+
+function Field({ label, value, icon }: { label: string; value: ReactNode; icon?: ReactNode }) {
+  return (
+    <div className="enterprise-field">
+      <div className="enterprise-field-label">{icon}{label}</div>
+      <div className="enterprise-field-value">{value}</div>
+    </div>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="enterprise-detail-row">
+      <span className="enterprise-detail-label">{label}</span>
+      <span className="enterprise-detail-value">{value}</span>
+    </div>
+  );
+}
+
+export default function AdvisoryRequestDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  const queryClient = useQueryClient();
+  const { data: currentUser } = useCurrentUser();
+  const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const [actionError, setActionError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['advisory-request', id],
+    queryFn: async () => {
+      const res = await fetch(`/api/advisory/requests/${id}`);
+      if (!res.ok) throw new Error('Failed to load request');
+      const json = await res.json();
+      return json.data as LegalRequestDetail;
+    },
+  });
+
+  const refetch = () => queryClient.invalidateQueries({ queryKey: ['advisory-request', id] });
+
+  const runAction = async (url: string, body?: unknown) => {
+    setBusy(true);
+    setActionError('');
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || 'Action failed');
+      }
+      await refetch();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Action failed');
+    } finally {
+      setBusy(false);
     }
-    setReq(advisoryRequests.find(r => r.id === id)!);
-    setIsAssigning(false);
   };
 
-  const handleSaveOpinion = async (submitForReview = false) => {
-    setIsSaving(true);
-    await new Promise(r => setTimeout(r, 800));
-    updateAdvisoryRequest(req.id, { legalOpinion: opinionText });
-    if (submitForReview) {
-      advanceAdvisoryStatus(req.id, 'pending_approval', currentUser);
-    } else if (req.status === 'assigned' || req.status === 'under_review') {
-      advanceAdvisoryStatus(req.id, 'drafting', currentUser);
-    }
-    setReq(advisoryRequests.find(r => r.id === id)!);
-    setIsSaving(false);
-  };
+  if (isLoading) {
+    return (
+      <div className="text-center py-20">
+        <div className="spinner-sm border-accent" />
+      </div>
+    );
+  }
 
-  const handleReview = async (action: 'approve' | 'return') => {
-    setIsSaving(true);
-    await new Promise(r => setTimeout(r, 600));
-    if (action === 'approve') {
-      advanceAdvisoryStatus(req.id, 'approved', currentUser);
-    } else {
-      advanceAdvisoryStatus(req.id, 'under_review', currentUser);
-    }
-    // In a real app we'd add the reviewComment to comments array
-    setReq(advisoryRequests.find(r => r.id === id)!);
-    setIsSaving(false);
-    setReviewComment('');
-  };
+  if (error || !data) {
+    return <div className="empty-state"><p>Legal advisory request not found.</p></div>;
+  }
 
-  const handleDispatch = async () => {
-    setIsSaving(true);
-    await new Promise(r => setTimeout(r, 600));
-    advanceAdvisoryStatus(req.id, 'dispatched', currentUser);
-    setReq(advisoryRequests.find(r => r.id === id)!);
-    setIsSaving(false);
-  };
+  const isRequester = currentUser?.id === data.requester.id;
+  const isAssignee = currentUser?.id === data.assignee?.id;
+  const role = currentUser?.role;
+  const latestActivity = data.history[0];
+  const ownerName = data.assignee ? `${data.assignee.firstName} ${data.assignee.lastName}` : 'Unassigned';
 
-  const isBreached = new Date(req.slaDeadline) < new Date() && !['dispatched', 'closed'].includes(req.status);
+  const actions = (
+    <>
+      {data.status === 'DRAFT' && isRequester && (
+        <button className="btn btn-primary" disabled={busy} onClick={() => runAction(`/api/advisory/requests/${id}/submit`)}>
+          <Send size={16} /> Submit Request
+        </button>
+      )}
+      {data.status === 'RETURNED' && isRequester && (
+        <button className="btn btn-primary" disabled={busy} onClick={() => runAction(`/api/advisory/requests/${id}/submit`)}>
+          <Send size={16} /> Resubmit Request
+        </button>
+      )}
+      {data.status === 'SUBMITTED' && (role === 'admin_assistant' || role === 'manager') && (
+        <>
+          <button className="btn btn-success" disabled={busy} onClick={() => runAction(`/api/advisory/requests/${id}/validate`, { approve: true })}>
+            <CheckCircle2 size={16} /> Validate
+          </button>
+          <button className="btn btn-warning" disabled={busy} onClick={() => runAction(`/api/advisory/requests/${id}/validate`, { approve: false, notes: 'Please provide additional information.' })}>
+            <XCircle size={16} /> Return
+          </button>
+        </>
+      )}
+      {(data.status === 'VALIDATED' || data.status === 'ASSIGNED') && (role === 'admin_assistant' || role === 'manager') && (
+        <Link href={`/advisory/${id}/assign`} className="btn btn-secondary">
+          <UserCog size={16} /> {data.status === 'VALIDATED' ? 'Assign Officer' : 'Reassign'}
+        </Link>
+      )}
+      {(data.status === 'ASSIGNED' || data.status === 'DRAFTING' || data.status === 'RETURNED') && isAssignee && (
+        <Link href={`/advisory/opinion/${id}`} className="btn btn-primary">
+          <FileEdit size={16} /> Draft Opinion
+        </Link>
+      )}
+      {data.status === 'REVIEW' && role === 'legal_officer' && (
+        <Link href={`/advisory/review/${id}`} className="btn btn-primary">
+          <Eye size={16} /> Review Opinion
+        </Link>
+      )}
+      {data.status === 'PENDING_APPROVAL' && role === 'manager' && (
+        <Link href={`/advisory/approval/${id}`} className="btn btn-primary">
+          <Gavel size={16} /> Review Approval
+        </Link>
+      )}
+      {data.status === 'APPROVED' && (role === 'manager' || role === 'legal_officer' || role === 'admin_assistant') && (
+        <Link href={`/advisory/dispatch/${id}`} className="btn btn-primary">
+          <Truck size={16} /> Dispatch
+        </Link>
+      )}
+      {data.status === 'DISPATCHED' && (role === 'admin_assistant' || role === 'manager') && (
+        <button className="btn btn-success" disabled={busy} onClick={() => runAction(`/api/advisory/requests/${id}/close`)}>
+          <Archive size={16} /> Close &amp; Archive
+        </button>
+      )}
+      {(data.status === 'CLOSED' || data.status === 'ARCHIVED') && role === 'manager' && (
+        <button className="btn btn-ghost" disabled={busy} onClick={() => runAction(`/api/advisory/requests/${id}/reopen`)}>
+          <RotateCcw size={16} /> Reopen
+        </button>
+      )}
+    </>
+  );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {/* ── Header ────────────────────────────────────────────── */}
-      <div>
-        <Link href="/advisory" className="btn btn-ghost btn-sm" style={{ paddingLeft: 0, marginBottom: 12 }}>
-          <ArrowLeft size={16} /> Back to Requests
-        </Link>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+    <div className="enterprise-page">
+      <div className="enterprise-hero">
+        <div className="enterprise-hero-content">
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-              <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{req.title}</h1>
-              <span className={`badge ${(ADVISORY_STATUS_COLORS as any)[req.status]}`}>{(ADVISORY_STATUS_LABELS as any)[req.status]}</span>
+            <Link href="/advisory/list" className="btn btn-ghost btn-sm pl-0 mb-3">
+              <ArrowLeft size={16} /> Back to Requests
+            </Link>
+            <div className="enterprise-kicker">
+              <span className="enterprise-id">{data.requestNumber}</span>
+              <StatusBadge status={data.status} />
+              <PriorityBadge priority={data.priority} />
+              {data.requiresDirectorApproval && <span className="tag">Director Approval Required</span>}
             </div>
-            <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: 13, fontFamily: 'monospace' }}>{req.id} • {(ADVISORY_CATEGORY_LABELS as any)[req.category]}</p>
+            <h1 className="enterprise-title">{data.subject}</h1>
+            <p className="enterprise-subtitle">{data.description}</p>
           </div>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-            {req.status === 'pending_approval' && (
-              <Link href={`/advisory/review/${req.id}`} className="btn btn-primary btn-sm">
-                <Eye size={14} style={{ marginRight: 6 }} /> Review
-              </Link>
-            )}
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>SLA Deadline</div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: isBreached ? 'var(--danger)' : 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Clock size={15} /> {formatDateTime(req.slaDeadline)}
-              </div>
-              {isBreached && <div style={{ fontSize: 11, color: 'var(--danger)', fontWeight: 600, marginTop: 4 }}>SLA BREACHED</div>}
+          <div className="enterprise-sla-card">
+            <div className="enterprise-sla-label">
+              <span>SLA health</span>
+              <Clock3 size={16} />
             </div>
+            <SlaCountdown slaDeadline={data.slaDeadline} slaHours={data.slaHours} status={data.status} slaBreached={data.slaBreached} />
           </div>
         </div>
       </div>
 
-      {/* ── Tabs ──────────────────────────────────────────────── */}
-      <div className="tabs-bar">
-        {[
-          { id: 'overview', label: 'Overview', icon: <FileText size={15} /> },
-          { id: 'assignment', label: 'Assignment', icon: <User size={15} /> },
-          { id: 'opinion', label: 'Legal Opinion', icon: <Scale size={15} /> },
-          { id: 'workflow', label: 'Review & Dispatch', icon: <CheckSquare size={15} /> },
-          { id: 'audit', label: 'Audit Trail', icon: <Shield size={15} /> },
-        ].map(t => (
-          <button key={t.id} className={`tab-btn ${activeTab === t.id ? 'active' : ''}`} onClick={() => setActiveTab(t.id as any)}>
-            {t.icon} {t.label}
-          </button>
-        ))}
+      {actionError && <div className="login-alert login-alert-error">{actionError}</div>}
+
+      <div className="enterprise-actionbar">
+        <div className="enterprise-actionbar-left">
+          <span className="enterprise-actionbar-title">Workspace actions</span>
+          <span className="badge status-review">{clean(data.requestType)}</span>
+        </div>
+        <div className="enterprise-actionbar-actions">{actions}</div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20 }}>
-        
-        {/* ── Main Content Area ─────────────────────────────────── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          
-          {activeTab === 'overview' && (
-            <div className="card">
-              <div className="card-header"><span className="card-title">Request Details</span></div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>Requesting Department</div>
-                  <div style={{ fontWeight: 500, fontSize: 14 }}>{req.requestingDepartment} (by {req.requestedBy})</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>Urgency</div>
-                  <span className={`badge ${(URGENCY_COLORS as any)[req.urgency]}`}>{req.urgency}</span>
-                </div>
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>Description</div>
-                  <p style={{ fontSize: 14, lineHeight: 1.6, margin: 0, padding: 16, background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)' }}>
-                    {req.description}
-                  </p>
-                </div>
-              </div>
-              <div className="card-header" style={{ borderTop: '1px solid var(--border-light)', paddingTop: 20 }}><span className="card-title">Attachments ({req.attachments.length})</span></div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {req.attachments.map((file, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
-                    <Paperclip size={16} color="var(--accent)" />
-                    <span style={{ fontSize: 13, fontWeight: 500, flex: 1 }}>{file}</span>
-                    <button className="btn btn-ghost btn-sm">Download</button>
-                  </div>
-                ))}
-                {req.attachments.length === 0 && <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>No attachments provided.</span>}
+      <div className="enterprise-kpi-grid">
+        <KpiCard icon={<FolderKanban size={20} />} label="Stage" value={clean(data.status)} meta={`Opened ${dateOrDash(data.createdAt)}`} />
+        <KpiCard icon={<Users size={20} />} label="Owner" value={ownerName} meta={data.requestingDepartment.name} />
+        <KpiCard icon={<Paperclip size={20} />} label="Evidence" value={data.attachments.length} meta="Uploaded attachments" />
+        <KpiCard icon={<MessageSquare size={20} />} label="Collaboration" value={data.comments.length} meta={`${data.history.length} activity events`} />
+      </div>
+
+      <div className="enterprise-layout">
+        <main className="enterprise-main">
+          <div className="enterprise-tabs" role="tablist" aria-label="Request sections">
+            {TABS.map((t) => (
+              <button
+                key={t}
+                className={`enterprise-tab ${activeTab === t ? 'active' : ''}`}
+                onClick={() => setActiveTab(t)}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === t}
+              >
+                {TAB_META[t].icon}
+                {TAB_META[t].label}
+              </button>
+            ))}
+          </div>
+
+          <section className="enterprise-panel">
+            <div className="enterprise-panel-header">
+              <div className="enterprise-panel-title">
+                {TAB_META[activeTab].icon}
+                {TAB_META[activeTab].label}
               </div>
             </div>
-          )}
-
-          {activeTab === 'assignment' && (
-            <div className="card">
-              <div className="card-header"><span className="card-title">Task Assignment</span></div>
-              
-              <div style={{ padding: 16, background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', marginBottom: 20 }}>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Current Assignee</div>
-                <div style={{ fontSize: 16, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <User size={18} color={req.assignedOfficer ? 'var(--accent)' : 'var(--text-muted)'} />
-                  {req.assignedOfficer || 'Unassigned'}
-                </div>
-              </div>
-
-              {isManager ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  <div className="form-group">
-                    <label className="form-label">Assign / Reassign Officer</label>
-                    <select className="form-control" value={assignee} onChange={e => setAssignee(e.target.value)}>
-                      <option value="">-- Select Legal Officer --</option>
-                      {USERS.filter(u => u.role === 'legal_officer').map(u => (
-                        <option key={u.id} value={u.name}>{u.name} ({u.department})</option>
-                      ))}
-                    </select>
+            <div className="enterprise-panel-body">
+              {activeTab === 'overview' && (
+                <div className="flex flex-col gap-5">
+                  <div className="enterprise-field-grid">
+                    <Field label="Category" value={data.category.name} icon={<FolderKanban size={13} />} />
+                    <Field label="Request Type" value={clean(data.requestType)} icon={<FileText size={13} />} />
+                    <Field label="Requesting Department" value={data.requestingDepartment.name} icon={<Users size={13} />} />
+                    <Field label="Requested By" value={`${data.requester.firstName} ${data.requester.lastName}`} icon={<Users size={13} />} />
+                    <Field label="Assigned Officer" value={ownerName} icon={<UserCog size={13} />} />
+                    <Field label="Due Date" value={dateOrDash(data.dueDate)} icon={<Clock3 size={13} />} />
                   </div>
-                  <div style={{ display: 'flex', gap: 12 }}>
-                    <button className="btn btn-primary" onClick={handleAssign} disabled={isAssigning || !assignee || assignee === req.assignedOfficer}>
-                      {isAssigning ? 'Assigning...' : 'Confirm Assignment'}
-                    </button>
-                    <button className="btn btn-secondary"><AlertCircle size={14}/> Escalate Request</button>
+                  <div>
+                    <div className="enterprise-field-label mb-2"><FileText size={13} /> Description</div>
+                    <p className="enterprise-description">{data.description}</p>
                   </div>
-                </div>
-              ) : (
-                <div className="alert alert-warning" style={{ fontSize: 13 }}>
-                  Only managers can reassign or escalate advisory requests.
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'opinion' && (
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 600 }}>
-              <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span className="card-title">Legal Opinion Editor</span>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn btn-ghost btn-sm" title="Template Library"><FileText size={14}/> Templates</button>
-                  <button className="btn btn-ghost btn-sm" title="Legal References"><Scale size={14}/> References</button>
-                </div>
-              </div>
-              
-              {!isAssignedToMe && !isManager && req.status !== 'approved' && req.status !== 'dispatched' ? (
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
-                  You must be assigned to this request to draft the opinion.
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 16 }}>
-                  <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', display: 'flex', flexDirection: 'column', flex: 1 }}>
-                    {/* Fake rich text toolbar */}
-                    <div style={{ background: 'var(--bg-input)', padding: '8px 12px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 12, borderTopLeftRadius: 'var(--radius-sm)', borderTopRightRadius: 'var(--radius-sm)' }}>
-                      <span style={{ fontWeight: 700, cursor: 'pointer' }}>B</span>
-                      <span style={{ fontStyle: 'italic', cursor: 'pointer' }}>I</span>
-                      <span style={{ textDecoration: 'underline', cursor: 'pointer' }}>U</span>
-                      <span style={{ color: 'var(--border)' }}>|</span>
-                      <span style={{ cursor: 'pointer' }}><PenTool size={14}/></span>
+                  {data.relatedContract && (
+                    <div className="enterprise-description">
+                      <div className="enterprise-field-label mb-2">Related Contract</div>
+                      <Link href={`/contracts/${data.relatedContract.id}`} className="text-accent hover:underline">
+                        {data.relatedContract.contractNumber} &mdash; {data.relatedContract.title}
+                      </Link>
                     </div>
-                    <textarea 
-                      className="form-control"
-                      style={{ flex: 1, border: 'none', borderRadius: 0, resize: 'none', padding: 20, fontSize: 14, lineHeight: 1.7 }}
-                      placeholder="Draft your legal opinion here..."
-                      value={opinionText}
-                      onChange={e => setOpinionText(e.target.value)}
-                      readOnly={req.status === 'approved' || req.status === 'dispatched' || req.status === 'closed'}
-                    />
-                  </div>
-                  
-                  {!(req.status === 'approved' || req.status === 'dispatched' || req.status === 'closed') && (
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-                      <button className="btn btn-secondary" onClick={() => handleSaveOpinion(false)} disabled={isSaving}>
-                        {isSaving ? 'Saving...' : 'Save Draft'}
-                      </button>
-                      <button className="btn btn-primary" onClick={() => handleSaveOpinion(true)} disabled={isSaving || !opinionText.trim()}>
-                        <CheckSquare size={16}/> Submit for Review
-                      </button>
+                  )}
+                  {data.tags.length > 0 && (
+                    <div>
+                      <div className="enterprise-field-label mb-2"><Sparkles size={13} /> Tags</div>
+                      <div className="tags-list">
+                        {data.tags.map((t) => <span key={t} className="tag">{t}</span>)}
+                      </div>
                     </div>
                   )}
                 </div>
               )}
-            </div>
-          )}
 
-          {activeTab === 'workflow' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-              
-              {/* Manager Review Section */}
-              <div className="card">
-                <div className="card-header"><span className="card-title">Manager Review</span></div>
-                {req.status === 'pending_approval' ? (
-                  isManager ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                      <p style={{ fontSize: 13, margin: 0 }}>The draft opinion has been submitted by {req.assignedOfficer} and is awaiting your review.</p>
-                      <textarea 
-                        className="form-control"
-                        rows={3}
-                        placeholder="Add review comments (optional if approving, required if returning)..."
-                        value={reviewComment}
-                        onChange={e => setReviewComment(e.target.value)}
-                      />
-                      <div style={{ display: 'flex', gap: 12 }}>
-                        <button className="btn btn-primary" onClick={() => handleReview('approve')} disabled={isSaving} style={{ background: 'var(--success)', borderColor: 'var(--success)' }}>
-                          <CheckCircle size={16} /> Approve Opinion
-                        </button>
-                        <button className="btn btn-secondary" onClick={() => handleReview('return')} disabled={isSaving || !reviewComment.trim()} style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}>
-                          <XCircle size={16} /> Return for Revision
-                        </button>
-                      </div>
+              {activeTab === 'workflow' && <WorkflowTimeline steps={data.workflowSteps} />}
+
+              {activeTab === 'attachments' && (
+                <AttachmentManager
+                  mode="remote"
+                  attachments={data.attachments}
+                  onUpload={async (files) => {
+                    const fd = new FormData();
+                    files.forEach((f) => fd.append('files', f));
+                    await fetch(`/api/advisory/requests/${id}/attachments`, { method: 'POST', body: fd });
+                    await refetch();
+                  }}
+                />
+              )}
+
+              {activeTab === 'comments' && (
+                <CommentThread
+                  comments={data.comments}
+                  onAddComment={async (text, isInternal) => {
+                    await fetch(`/api/advisory/requests/${id}/comments`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ text, isInternal }),
+                    });
+                    await refetch();
+                  }}
+                />
+              )}
+
+              {activeTab === 'opinion' && (
+                data.opinion ? (
+                  <div className="flex flex-col gap-4">
+                    <div className="flex justify-between items-center text-sm text-muted flex-wrap gap-2">
+                      <span>Version {data.opinion.currentVersion}</span>
+                      {data.opinion.referenceNumber && <span>Reference: {data.opinion.referenceNumber}</span>}
                     </div>
-                  ) : (
-                    <div className="alert alert-warning">Awaiting manager approval. You cannot make changes at this stage.</div>
-                  )
-                ) : req.status === 'approved' || req.status === 'dispatched' || req.status === 'closed' ? (
-                  <div className="alert alert-success" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <CheckCircle size={16} /> Opinion was approved by {req.approvedBy || 'Manager'}.
+                    <div className="enterprise-description tiptap-content" dangerouslySetInnerHTML={{ __html: data.opinion.content }} />
+                    {data.opinion.versions.length > 0 && (
+                      <div className="attachment-grid">
+                        {data.opinion.versions.map((version) => (
+                          <div className="attachment-card" key={version.id}>
+                            <div className="attachment-preview"><History /></div>
+                            <div>
+                              <div className="attachment-name">Opinion version {version.versionNumber}</div>
+                              <div className="attachment-meta">
+                                {version.createdBy.firstName} {version.createdBy.lastName}<br />
+                                {format(new Date(version.createdAt), 'MMM d, yyyy HH:mm')}
+                              </div>
+                            </div>
+                            {version.changeNote && <p className="attachment-meta">{version.changeNote}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {data.opinion.digitallySignedBy && (
+                      <div className="text-xs text-muted border-t border-border pt-3">
+                        Digitally signed by {data.opinion.digitallySignedBy}
+                        {data.opinion.digitallySignedAt && ` on ${format(new Date(data.opinion.digitallySignedAt), 'MMM d, yyyy HH:mm')}`}
+                      </div>
+                    )}
                   </div>
                 ) : (
-                  <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>The opinion is currently in drafting phase and not yet ready for review.</div>
-                )}
-              </div>
+                  <div className="empty-state"><FileEdit /><p>No legal opinion has been drafted yet.</p></div>
+                )
+              )}
 
-              {/* Dispatch Section */}
-              <div className="card">
-                <div className="card-header"><span className="card-title">Dispatch & Close</span></div>
-                {req.status === 'approved' ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    <p style={{ fontSize: 13, margin: 0 }}>The opinion is approved and ready to be sent to the requesting department ({req.requestingDepartment}).</p>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)' }}>
-                      <input type="checkbox" id="notify" defaultChecked style={{ accentColor: 'var(--accent)' }}/>
-                      <label htmlFor="notify" style={{ fontSize: 13, cursor: 'pointer' }}>Send automatic email notification to {req.requestedBy}</label>
-                    </div>
-                    <button className="btn btn-primary" onClick={handleDispatch} disabled={isSaving} style={{ width: 'fit-content' }}>
-                      <Send size={16}/> Dispatch & Close Request
-                    </button>
-                  </div>
-                ) : req.status === 'dispatched' || req.status === 'closed' ? (
-                  <div className="alert alert-success" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Mail size={16} /> Opinion was dispatched successfully. The request is closed.
-                  </div>
+              {activeTab === 'approvals' && (
+                data.approvals.length === 0 ? (
+                  <div className="empty-state"><ShieldCheck /><p>No approval decisions recorded yet.</p></div>
                 ) : (
-                  <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Dispatch becomes available only after the opinion is approved by a manager.</div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'audit' && (
-            <div className="card">
-              <div className="card-header"><span className="card-title">Audit Trail</span></div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                {[...req.auditTrail].reverse().map((entry, i) => (
-                  <div key={entry.id} style={{ display: 'flex', gap: 16, padding: '16px 0', borderBottom: i < req.auditTrail.length - 1 ? '1px solid var(--border-light)' : 'none' }}>
-                    <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--bg-input)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <Shield size={14} color="var(--text-muted)" />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{entry.details}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <User size={11} /> {entry.userName} • <Clock size={11}/> {formatDateTime(entry.timestamp)}
-                      </div>
-                    </div>
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr><th>Stage</th><th>Decision</th><th>Approver</th><th>Comments</th><th>Date</th></tr>
+                      </thead>
+                      <tbody>
+                        {data.approvals.map((a) => (
+                          <tr key={a.id}>
+                            <td>{clean(a.stage)}</td>
+                            <td>{a.decision}</td>
+                            <td>{a.approver.firstName} {a.approver.lastName}</td>
+                            <td>{a.comments ?? '—'}</td>
+                            <td>{format(new Date(a.decidedAt), 'MMM d, yyyy HH:mm')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+                )
+              )}
 
-        {/* ── Sidebar ───────────────────────────────────────────── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          <div className="card" style={{ background: 'var(--bg-surface)' }}>
-            <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 16, borderBottom: '1px solid var(--border-light)', paddingBottom: 8 }}>Status Tracker</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {[
-                { label: 'Submitted', key: 'submitted' },
-                { label: 'Assigned', key: 'assigned' },
-                { label: 'Drafting', key: 'drafting' },
-                { label: 'Pending Approval', key: 'pending_approval' },
-                { label: 'Approved', key: 'approved' },
-                { label: 'Dispatched', key: 'dispatched' },
-              ].map((step, i) => {
-                const stepOrder = ['submitted', 'assigned', 'drafting', 'under_review', 'pending_approval', 'approved', 'dispatched', 'closed'];
-                const currentIdx = stepOrder.indexOf(req.status);
-                const stepIdx = stepOrder.indexOf(step.key);
-                
-                let statusColor = 'var(--text-muted)';
-                let isComplete = false;
-                
-                if (currentIdx >= stepIdx) {
-                  statusColor = 'var(--accent)';
-                  isComplete = true;
-                }
-                
-                return (
-                  <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                    <div style={{ width: 24, height: 24, borderRadius: '50%', border: `2px solid ${statusColor}`, background: isComplete ? statusColor : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
-                      {isComplete && <CheckCircle size={14} />}
-                    </div>
-                    <span style={{ fontSize: 13, fontWeight: isComplete ? 600 : 400, color: isComplete ? 'var(--text-primary)' : 'var(--text-muted)' }}>{step.label}</span>
+              {activeTab === 'timeline' && <ActivityTimeline history={data.history} />}
+
+              {activeTab === 'history' && (
+                data.history.length === 0 ? (
+                  <div className="empty-state"><History /><p>No history entries yet.</p></div>
+                ) : (
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr><th>Date</th><th>Action</th><th>User</th><th>Description</th></tr>
+                      </thead>
+                      <tbody>
+                        {data.history.map((h) => (
+                          <tr key={h.id}>
+                            <td>{format(new Date(h.createdAt), 'MMM d, yyyy HH:mm')}</td>
+                            <td>{h.action}</td>
+                            <td>{h.actor ? `${h.actor.firstName} ${h.actor.lastName}` : 'System'}</td>
+                            <td>{h.description}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                );
-              })}
+                )
+              )}
+
+              {activeTab === 'audit' && <AuditTrailTable logs={data.auditLogs} />}
+
+              {activeTab === 'metadata' && (
+                <div className="enterprise-field-grid">
+                  <Field label="Request ID" value={<span className="font-mono text-sm">{data.id}</span>} />
+                  <Field label="Confidentiality" value={clean(data.confidentiality)} />
+                  <Field label="SLA Hours" value={`${data.slaHours}h`} />
+                  <Field label="SLA Deadline" value={format(new Date(data.slaDeadline), 'MMM d, yyyy HH:mm')} />
+                  <Field label="Created" value={format(new Date(data.createdAt), 'MMM d, yyyy HH:mm')} />
+                  <Field label="Last Updated" value={format(new Date(data.updatedAt), 'MMM d, yyyy HH:mm')} />
+                  <Field label="Closed At" value={dateOrDash(data.closedAt, 'MMM d, yyyy HH:mm')} />
+                  <Field label="Archived At" value={dateOrDash(data.archivedAt, 'MMM d, yyyy HH:mm')} />
+                </div>
+              )}
+            </div>
+          </section>
+        </main>
+
+        <aside className="enterprise-side">
+          <div className="enterprise-side-card">
+            <div className="enterprise-side-title"><Info /> Request details</div>
+            <div className="enterprise-detail-list">
+              <DetailRow label="Requester" value={`${data.requester.firstName} ${data.requester.lastName}`} />
+              <DetailRow label="Requester initials" value={initials(data.requester.firstName, data.requester.lastName)} />
+              <DetailRow label="Department" value={data.requestingDepartment.name} />
+              <DetailRow label="Confidentiality" value={clean(data.confidentiality)} />
+              <DetailRow label="Created" value={dateOrDash(data.createdAt)} />
+              <DetailRow label="Updated" value={dateOrDash(data.updatedAt, 'MMM d, yyyy HH:mm')} />
             </div>
           </div>
-        </div>
+
+          <div className="enterprise-side-card">
+            <div className="enterprise-side-title"><Activity /> Activity timeline</div>
+            {data.history.length > 0 ? (
+              <ActivityTimeline history={data.history.slice(0, 4)} />
+            ) : (
+              <div className="empty-state"><p>No activity recorded yet.</p></div>
+            )}
+          </div>
+
+          <div className="enterprise-side-card">
+            <div className="enterprise-side-title"><Sparkles /> Latest signal</div>
+            <div className="enterprise-detail-list">
+              <DetailRow label="Last event" value={latestActivity?.action ?? 'None'} />
+              <DetailRow label="Actor" value={latestActivity?.actor ? `${latestActivity.actor.firstName} ${latestActivity.actor.lastName}` : 'System'} />
+              <DetailRow label="When" value={latestActivity ? format(new Date(latestActivity.createdAt), 'MMM d, yyyy HH:mm') : '—'} />
+            </div>
+          </div>
+        </aside>
       </div>
     </div>
   );

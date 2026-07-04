@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { cookies, headers } from 'next/headers';
-import { USERS } from '@/data/store';
+import bcrypt from 'bcryptjs';
+import prisma from '@/lib/prisma';
+import { roleNameToSlug } from '@/lib/roleMap';
 import { signJwt } from '@/lib/jwt';
 import {
   isAccountLocked,
@@ -70,23 +72,33 @@ export async function POST(request: Request) {
       );
     }
 
-    // ── Find user ────────────────────────────────────────────────────────────
-    const user = USERS.find((u) => u.email.toLowerCase() === email);
+    // ── Find user (DB) ───────────────────────────────────────────────────────
+    const dbUser = await prisma.user.findUnique({
+      where: { email },
+      include: { role: true, department: true },
+    });
 
-    if (!user) {
+    if (!dbUser || !dbUser.isActive) {
       // Don't reveal whether email exists — record failure anyway
       const { attemptsLeft, locked: nowLocked } = recordFailedAttempt(email);
-      addAuditEntry({ email, event: 'FAILURE', ipAddress: ip, userAgent, reason: 'Email not found' });
+      addAuditEntry({ email, event: 'FAILURE', ipAddress: ip, userAgent, reason: dbUser ? 'Account inactive' : 'Email not found' });
       const msg = nowLocked
         ? `Account locked after ${MAX_FAILED_ATTEMPTS} failed attempts. Try again in ${formatLockDuration(LOCKOUT_DURATION_MS)}.`
         : `Invalid credentials. ${attemptsLeft} attempt${attemptsLeft === 1 ? '' : 's'} remaining before lockout.`;
       return NextResponse.json({ error: msg, attemptsLeft, locked: nowLocked }, { status: 401 });
     }
 
+    const user = {
+      id: dbUser.id,
+      email: dbUser.email,
+      name: `${dbUser.firstName} ${dbUser.lastName}`,
+      role: roleNameToSlug(dbUser.role.name),
+      department: dbUser.department?.name ?? '',
+      mfaEnabled: dbUser.mfaEnabled,
+    };
+
     // ── Password verification ─────────────────────────────────────────────────
-    // In production this would use: await bcrypt.compare(password, user.passwordHash)
-    // For local dev with mock data, we accept any non-empty password.
-    const passwordValid = password.length > 0; // TODO: replace with bcrypt.compare
+    const passwordValid = await bcrypt.compare(password, dbUser.passwordHash);
 
     if (!passwordValid) {
       const { attemptsLeft, locked: nowLocked } = recordFailedAttempt(email);
@@ -98,10 +110,7 @@ export async function POST(request: Request) {
     }
 
     // ── MFA check ─────────────────────────────────────────────────────────────
-    // Check if user has MFA enabled (from the DB user model's mfaEnabled field)
-    // For mock store we check a mfaEnabled flag; mock users don't have it → skip MFA
-    const mfaEnabled = (user as Record<string, unknown>).mfaEnabled === true;
-    if (mfaEnabled) {
+    if (user.mfaEnabled) {
       // Store a short-lived pre-auth token so the MFA step can identify the user
       const preAuthToken = await signJwt(
         { sub: user.id, email: user.email, role: user.role },
