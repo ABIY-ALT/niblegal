@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import { ContractCategory } from '@prisma/client';
+// import { ContractCategory } from '@prisma/client';
 
 export const contractSchema = z.object({
   title: z.string().min(3, 'Title is required').max(200),
-  category: z.nativeEnum(ContractCategory),
+  category: z.string(),
   requestingDepartmentId: z.string().optional(),
   counterparty: z.string().min(2, 'Vendor/Counterparty is required'),
   description: z.string().optional(),

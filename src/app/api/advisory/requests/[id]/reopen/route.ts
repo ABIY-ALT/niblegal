@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/session';
+import { hasAccess } from '@/lib/access';
 import { logLegalActivity } from '@/lib/advisoryHistory';
 import { transitionStage } from '@/lib/workflow';
 
@@ -9,7 +10,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    if (user.role !== 'manager') {
+    if (!hasAccess(user, { permission: 'advisory.approve', roles: ['manager'] })) {
       return NextResponse.json({ error: 'Only a Division Manager can reopen a closed request' }, { status: 403 });
     }
 

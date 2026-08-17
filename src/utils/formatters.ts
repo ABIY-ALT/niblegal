@@ -41,6 +41,18 @@ export const CONTRACT_STATUS_COLORS: Record<ContractStatus, string> = {
   expiring_soon: 'status-warning', expired: 'status-expired', terminated: 'status-terminated', renewed: 'status-renewed',
 };
 
+export const CONTRACT_CATEGORY_LABELS: Record<string, string> = {
+  service_agreement: 'Service Agreement',
+  lease: 'Lease',
+  nda: 'NDA',
+  procurement: 'Procurement',
+  employment: 'Employment',
+  loan_agreement: 'Loan Agreement',
+  partnership: 'Partnership',
+  consultancy: 'Consultancy',
+  other: 'Other',
+};
+
 export const ADVISORY_STATUS_LABELS: Record<AdvisoryStatus, string> = {
   submitted: 'Submitted', assigned: 'Assigned', drafting: 'Drafting',
   under_review: 'Under Review', pending_approval: 'Pending Approval',
@@ -62,18 +74,13 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   manager: 'Manager / Director', requesting_organ: 'Requesting Department',
 };
 
-export const CONTRACT_CATEGORY_LABELS: Record<ContractCategory, string> = {
-  service_agreement: 'Service Agreement', procurement: 'Procurement', employment: 'Employment',
-  lease: 'Lease', loan_agreement: 'Loan Agreement', nda: 'NDA',
-  partnership: 'Partnership', consultancy: 'Consultancy', other: 'Other',
-};
+export function formatContractCategory(category: string): string {
+  return category.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+}
 
-export const ADVISORY_CATEGORY_LABELS: Record<AdvisoryCategory, string> = {
-  contract_review: 'Contract Review', regulatory_compliance: 'Regulatory Compliance',
-  employment_law: 'Employment Law', litigation: 'Litigation',
-  corporate_governance: 'Corporate Governance', banking_regulation: 'Banking Regulation',
-  intellectual_property: 'Intellectual Property', general_advisory: 'General Advisory', other: 'Other',
-};
+export function formatAdvisoryCategory(category: string): string {
+  return category.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+}
 
 export const KNOWLEDGE_TYPE_LABELS: Record<KnowledgeItemType, string> = {
   template: 'Template', legal_opinion: 'Legal Opinion',

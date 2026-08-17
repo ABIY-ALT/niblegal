@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/session';
 import { contractSchema } from '@/lib/validations/contract';
 import { generateContractNumber } from '@/lib/contractNumber';
+import { withUniqueRetry } from '@/lib/sequence';
 import { logContractActivity } from '@/lib/contractHistory';
 import { transitionContractStage } from '@/lib/contractWorkflow';
 import { notifyContractWorkflow } from '@/lib/notifyContract';
@@ -78,24 +79,27 @@ export async function POST(req: NextRequest) {
     const validated = contractSchema.parse(body);
     const { requestingDepartmentId, ...rest } = validated;
 
-    const contractNumber = await generateContractNumber();
-
-    const contract = await prisma.contract.create({
-      data: {
-        ...rest,
-        contractNumber,
-        status: 'DRAFT',
-        requesterId: user.id,
-        requestingDepartmentId: requestingDepartmentId ?? user.departmentId ?? null,
-      },
-    });
+    // Number generation + insert are retried together: if a simultaneous create
+    // claims the same number first, the unique index rejects this insert and the
+    // retry regenerates against the new highest value.
+    const contract = await withUniqueRetry(async () =>
+      prisma.contract.create({
+        data: {
+          ...rest,
+          contractNumber: await generateContractNumber(),
+          status: 'DRAFT',
+          requesterId: user.id,
+          requestingDepartmentId: requestingDepartmentId ?? user.departmentId ?? null,
+        },
+      }),
+    );
 
     await transitionContractStage(contract.id, 'DRAFT', user.id, 'Contract request created');
     await logContractActivity({
       contractId: contract.id,
       actorId: user.id,
       action: 'CREATED',
-      description: `Contract request ${contractNumber} created by ${user.name}`,
+      description: `Contract request ${contract.contractNumber} created by ${user.name}`,
       toValue: 'DRAFT',
     });
 
@@ -103,7 +107,7 @@ export async function POST(req: NextRequest) {
     await notifyContractWorkflow({
       contractId: contract.id,
       title: 'New contract request',
-      body: `${contractNumber} — ${contract.title}`,
+      body: `${contract.contractNumber} — ${contract.title}`,
       type: 'INFO',
       actorId: user.id,
       recipientRoles: ['Manager', 'Legal Officer'],

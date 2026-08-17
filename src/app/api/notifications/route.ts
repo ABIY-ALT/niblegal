@@ -15,9 +15,10 @@ export async function GET(req: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50');
     const status = searchParams.get('status') || 'ALL';
     const type = searchParams.get('type') || 'ALL';
+    const priority = searchParams.get('priority') || 'ALL';
 
     const [notifications, unreadCount, unreadMessages, announcements] = await Promise.all([
-      NotificationService.getForUser(userId, { page, limit, status, type }),
+      NotificationService.getForUser(userId, { page, limit, status, type, priority }),
       NotificationService.getUnreadCount(userId),
       MessageService.getUnreadCount(userId),
       AnnouncementService.getActive(),

@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import {
-  RequestType,
   Priority,
   ConfidentialityLevel,
   AssignmentAction,
@@ -12,7 +11,7 @@ export const legalRequestSchema = z.object({
   subject: z.string().min(5, 'Subject must be at least 5 characters').max(200),
   categoryId: z.string().min(1, 'Category is required'),
   requestingDepartmentId: z.string().min(1, 'Requesting department is required'),
-  requestType: z.nativeEnum(RequestType).default('LEGAL_OPINION'),
+  requestType: z.string().default('LEGAL_OPINION'),
   priority: z.nativeEnum(Priority).default('MEDIUM'),
   description: z.string().min(10, 'Description must be at least 10 characters'),
   relatedContractId: z.string().optional().nullable(),

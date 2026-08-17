@@ -1,220 +1,427 @@
 'use client';
 
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { 
-  FileText, Clock, CheckCircle, ShieldAlert, Plus, 
-  ArrowRight, FileSignature, Archive, Search, Filter, ArrowUpRight, TrendingUp, Activity
+import {
+  FileText, Clock, CheckCircle, ShieldAlert, Plus, FileSignature,
+  Search, ArrowUpRight, Activity, PieChart as PieIcon, LayoutGrid,
+  Inbox, RefreshCw, Calendar, ArrowRight,
 } from 'lucide-react';
 import {
-  BarChart, Bar, PieChart, Pie, Cell, LineChart, Line,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
+  BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis,
+  CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
+import { formatDistanceToNow, format } from 'date-fns';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { ChartTooltip } from '@/components/ChartTooltip';
+import { statusLabel, statusBadgeClass, categoryLabel } from '@/lib/contractStatus';
 
-const PIE_COLORS = ['var(--success)', 'var(--warning)', 'var(--info)', 'var(--danger)'];
-
-const RECENT_ACTIVITY = [
-  { id: 1, action: 'Contract Approved', contract: 'CON-2026-00142', user: 'Director Gen.', time: '2 mins ago', color: 'text-success' },
-  { id: 2, action: 'Draft Created', contract: 'CON-2026-00145', user: 'Abebe T.', time: '1 hour ago', color: 'text-info' },
-  { id: 3, action: 'Review Requested', contract: 'CON-2026-00139', user: 'Mekdes A.', time: '3 hours ago', color: 'text-warning' },
-  { id: 4, action: 'Signature Pending', contract: 'CON-2026-00120', user: 'System', time: '5 hours ago', color: 'text-accent' },
+const CATEGORY_COLORS = [
+  '#3b82f6', '#16a34a', '#EAB308', '#8b5cf6',
+  '#ec4899', '#06b6d4', '#f97316', '#ef4444', '#84cc16',
 ];
 
-const MONTHLY_TRENDS = [
-  { month: 'Jan', count: 40 }, { month: 'Feb', count: 30 }, { month: 'Mar', count: 45 },
-  { month: 'Apr', count: 50 }, { month: 'May', count: 65 }, { month: 'Jun', count: 85 }
-];
+type StatsResponse = {
+  summary: Record<string, number>;
+  categories: { category: string; count: number }[];
+};
+type AuditEntry = {
+  id: string; module: string; action: string;
+  details: string | null; user: string; createdAt: string;
+};
+type ExpiringContract = {
+  id: string; contractNumber: string; title: string;
+  counterparty: string; status: string; expiryDate: string | null;
+};
+
+async function getJson(url: string) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Request failed (${res.status})`);
+  return res.json();
+}
+
+function PanelEmpty({ icon, message }: { icon: React.ReactNode; message: string }) {
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      gap: 10, padding: '32px 16px', textAlign: 'center', color: 'var(--text-muted)',
+    }}>
+      <div style={{
+        width: 46, height: 46, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        borderRadius: 14, background: 'var(--bg-input)', border: '1px solid var(--border)',
+      }}>
+        {icon}
+      </div>
+      <span style={{ fontSize: 13 }}>{message}</span>
+    </div>
+  );
+}
 
 export default function ContractsDashboard() {
-  const { data: stats, isLoading } = useQuery({
+  const router = useRouter();
+  const [search, setSearch] = useState('');
+  const { data: me } = useCurrentUser();
+
+  // The audit endpoint is restricted to legal staff; requesting organs get a 403,
+  // so the activity panel is only requested for roles that may read it.
+  const canReadAudit = !!me && ['manager', 'legal_officer', 'admin_assistant'].includes(me.role);
+
+  const statsQuery = useQuery<StatsResponse>({
     queryKey: ['contracts-stats'],
-    queryFn: async () => {
-      const res = await fetch('/api/contracts/stats');
-      if (!res.ok) throw new Error('Failed to fetch stats');
-      return res.json();
-    }
+    queryFn: () => getJson('/api/contracts/stats'),
   });
 
-  if (isLoading) {
+  const activityQuery = useQuery<{ data: AuditEntry[] }>({
+    queryKey: ['contracts-activity'],
+    queryFn: () => getJson('/api/reports/audit?module=CMS&limit=6'),
+    enabled: canReadAudit,
+  });
+
+  const expiringQuery = useQuery<{ data: ExpiringContract[] }>({
+    queryKey: ['contracts-expiring-preview'],
+    queryFn: () => getJson('/api/contracts?status=EXPIRING_SOON&limit=5'),
+  });
+
+  const submitSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = search.trim();
+    router.push(q ? `/contracts/list?q=${encodeURIComponent(q)}` : '/contracts/list');
+  };
+
+  if (statsQuery.isLoading) {
     return (
-      <div className="flex flex-col gap-6 animate-pulse">
-        <div className="h-20 bg-bg-surface rounded-xl"></div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[1,2,3,4].map(i => <div key={i} className="h-28 bg-bg-surface rounded-xl"></div>)}
+      <div className="enterprise-page">
+        <div className="skeleton" style={{ height: 118, borderRadius: 'var(--radius-lg)' }} />
+        <div className="enterprise-kpi-grid cols-6">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="skeleton" style={{ height: 108, borderRadius: 'var(--radius-md)' }} />
+          ))}
         </div>
-        <div className="h-96 bg-bg-surface rounded-xl"></div>
+        <div className="enterprise-layout">
+          <div className="skeleton" style={{ height: 340, borderRadius: 'var(--radius-lg)' }} />
+          <div className="skeleton" style={{ height: 340, borderRadius: 'var(--radius-md)' }} />
+        </div>
       </div>
     );
   }
 
-  const s = stats?.summary || { total: 0, draft: 0, review: 0, pendingApproval: 0, approved: 0, executed: 0, active: 0, expiring: 0, expired: 0 };
-  const categories = stats?.categories || [
-    { category: 'Procurement', count: 40 },
-    { category: 'HR', count: 20 },
-    { category: 'IT_Services', count: 35 },
-    { category: 'Real_Estate', count: 29 }
+  if (statsQuery.isError) {
+    return (
+      <div className="enterprise-page">
+        <div className="alert alert-danger">
+          Could not load contract statistics.
+          <button className="btn btn-sm btn-ghost" style={{ marginLeft: 10 }} onClick={() => statsQuery.refetch()}>
+            <RefreshCw size={14} /> Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const s = statsQuery.data?.summary ?? {};
+  const num = (k: string) => Number(s[k] ?? 0);
+  const categories = statsQuery.data?.categories ?? [];
+
+  const kpis = [
+    { title: 'Total Contracts', value: num('total'), icon: <FileText size={19} />, tone: 'accent', href: '/contracts/list' },
+    { title: 'Drafts', value: num('draft'), icon: <FileText size={19} />, tone: 'muted', href: '/contracts/drafts' },
+    { title: 'Under Review', value: num('review'), icon: <Clock size={19} />, tone: 'info', href: '/contracts/review' },
+    { title: 'Pending Approval', value: num('pendingApproval'), icon: <CheckCircle size={19} />, tone: 'warning', href: '/contracts/approval' },
+    { title: 'Executed', value: num('executed'), icon: <FileSignature size={19} />, tone: 'success', href: '/contracts/executed' },
+    { title: 'Expiring Soon', value: num('expiring'), icon: <ShieldAlert size={19} />, tone: 'danger', href: '/contracts/expiring' },
   ];
 
-  const statCards = [
-    { title: 'Total Contracts', value: s.total, icon: <FileText size={20} />, color: 'accent' },
-    { title: 'Drafts', value: s.draft, icon: <FileText size={20} />, color: 'info' },
-    { title: 'Under Review', value: s.review, icon: <Clock size={20} />, color: 'warning' },
-    { title: 'Pending Approval', value: s.pendingApproval, icon: <CheckCircle size={20} />, color: 'info' },
-    { title: 'Executed', value: s.executed, icon: <FileSignature size={20} />, color: 'success' },
-    { title: 'Expiring Soon', value: s.expiring, icon: <ShieldAlert size={20} />, color: 'danger' },
+  /* Pipeline distribution — real server-side counts from /api/contracts/stats.
+     (This replaces a hardcoded six-month "processing volume" line chart; no
+     endpoint exposes historical volume, so nothing here is invented.) */
+  const pipeline = [
+    { stage: 'Draft', count: num('draft'), fill: '#6B7280' },
+    { stage: 'Review', count: num('review'), fill: '#3b82f6' },
+    { stage: 'Approval', count: num('pendingApproval'), fill: '#EAB308' },
+    { stage: 'Approved', count: num('approved'), fill: '#16a34a' },
+    { stage: 'Executed', count: num('executed'), fill: '#CA8A04' },
+    { stage: 'Active', count: num('active'), fill: '#15803D' },
   ];
+  const pipelineTotal = pipeline.reduce((t, p) => t + p.count, 0);
+
+  const activity = activityQuery.data?.data ?? [];
+  const expiring = expiringQuery.data?.data ?? [];
+
+  const daysLeft = (d: string | null) => {
+    if (!d) return null;
+    return Math.ceil((new Date(d).getTime() - Date.now()) / 86_400_000);
+  };
 
   return (
-    <div className="flex flex-col gap-6 animate-in fade-in">
-      
-      {/* ── Header & Toolbar ── */}
-      <div className="flex justify-between items-center bg-card p-6 rounded-xl border border-border shadow-sm">
-        <div>
-          <h1 className="text-2xl font-bold m-0 flex items-center gap-3 text-primary">
-            <FileSignature size={24} className="text-accent" /> Contract Management
-          </h1>
-          <p className="text-sm text-muted mt-1">Enterprise dashboard for tracking contract lifecycles and compliance.</p>
-        </div>
-        <div className="flex gap-3">
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-            <input type="text" placeholder="Search contracts..." className="form-control pl-9 w-64" />
+    <div className="enterprise-page">
+
+      {/* ── Hero ─────────────────────────────────────────────────────────── */}
+      <div className="enterprise-hero">
+        <div className="enterprise-hero-content">
+          <div style={{ minWidth: 0 }}>
+            <div className="enterprise-kicker">
+              <span className="enterprise-id">CMS</span>
+              <span className="badge status-active">Contract Management</span>
+            </div>
+            <h1 className="enterprise-title">Contract Management</h1>
+            <p className="enterprise-subtitle">
+              Track the full contract lifecycle — from request and legal review through
+              approval, execution and renewal — across every department.
+            </p>
           </div>
-          <button className="btn btn-secondary"><Filter size={16} /> Filters</button>
-          <Link href="/contracts/new" className="btn btn-primary">
-            <Plus size={16} /> Create Contract
-          </Link>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 260 }}>
+            <form onSubmit={submitSearch} className="cm-search" style={{ maxWidth: 'none' }}>
+              <Search />
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search contracts…"
+                aria-label="Search contracts"
+              />
+            </form>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Link href="/contracts/list" className="btn btn-ghost btn-sm" style={{ flex: 1, justifyContent: 'center' }}>
+                <LayoutGrid size={14} /> Browse all
+              </Link>
+              <Link href="/contracts/new" className="btn btn-primary btn-sm" style={{ flex: 1, justifyContent: 'center' }}>
+                <Plus size={14} /> New contract
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* ── KPI Cards ── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        {statCards.map((stat, idx) => (
-          <div key={idx} className={`card card-sm border-t-4 border-t-${stat.color} hover:-translate-y-1 transition-transform`}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-muted text-[11px] font-bold uppercase tracking-wider">{stat.title}</div>
-              <div className={`text-${stat.color} bg-${stat.color}/10 p-1.5 rounded-lg`}>{stat.icon}</div>
+      {/* ── KPI strip ────────────────────────────────────────────────────── */}
+      <div className="enterprise-kpi-grid cols-6">
+        {kpis.map((k) => (
+          <Link key={k.title} href={k.href} className={`enterprise-kpi tone-${k.tone}`} style={{ textDecoration: 'none' }}>
+            <div className="enterprise-kpi-head">
+              <div style={{ minWidth: 0 }}>
+                <div className="enterprise-kpi-label">{k.title}</div>
+                <div className="enterprise-kpi-number">{k.value.toLocaleString()}</div>
+              </div>
+              <div className={`enterprise-kpi-icon tone-${k.tone}`}>{k.icon}</div>
             </div>
-            <div className="text-3xl font-bold font-mono text-primary">{stat.value}</div>
-          </div>
+          </Link>
         ))}
       </div>
 
-      {/* ── Main Dashboard Grid ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Chart: Volume over time */}
-        <div className="card lg:col-span-2">
-          <div className="flex items-center justify-between border-b border-border pb-4 mb-4">
-            <h3 className="font-bold flex items-center gap-2"><TrendingUp size={16} className="text-accent"/> Monthly Processing Volume</h3>
-            <button className="btn btn-ghost btn-sm text-xs">View Report <ArrowUpRight size={12}/></button>
-          </div>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={MONTHLY_TRENDS}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} />
-                <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }} />
-                <Line type="monotone" dataKey="count" stroke="var(--accent)" strokeWidth={3} dot={{ r: 4, fill: 'var(--bg-card)', strokeWidth: 2 }} activeDot={{ r: 6 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+      {/* ── Main grid ────────────────────────────────────────────────────── */}
+      <div className="enterprise-layout">
+        <div className="enterprise-main">
 
-        {/* Breakdown by Category */}
-        <div className="card">
-          <div className="flex items-center justify-between border-b border-border pb-4 mb-4">
-            <h3 className="font-bold flex items-center gap-2"><Activity size={16} className="text-info"/> Contracts by Category</h3>
-          </div>
-          <div className="h-48 mb-4">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={categories} dataKey="count" nameKey="category" cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5}>
-                  {categories.map((entry: any, index: number) => (
-                    <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="flex flex-col gap-2">
-            {categories.map((cat: any, i: number) => (
-              <div key={i} className="flex justify-between items-center text-sm p-2 hover:bg-bg-surface rounded-md transition-colors">
-                <span className="flex items-center gap-2 font-medium">
-                  <span className="w-2 h-2 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }}></span>
-                  {cat.category.replace('_', ' ')}
-                </span>
-                <span className="font-mono text-muted">{cat.count}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Recent Activity Timeline */}
-        <div className="card lg:col-span-2">
-          <div className="flex items-center justify-between border-b border-border pb-4 mb-4">
-            <h3 className="font-bold flex items-center gap-2"><Activity size={16} className="text-success"/> Real-Time Activity Feed</h3>
-            <Link href="/contracts/list" className="btn btn-ghost btn-sm text-xs">View All Logs <ArrowUpRight size={12}/></Link>
-          </div>
-          <div className="flex flex-col relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-border before:to-transparent">
-            {RECENT_ACTIVITY.map((activity, i) => (
-              <div key={i} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active py-3">
-                <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-bg-card bg-bg-surface text-muted shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10">
-                  <div className={`w-2 h-2 rounded-full bg-current ${activity.color}`}></div>
-                </div>
-                <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-xl border border-border bg-bg-surface shadow-sm">
-                  <div className="flex justify-between mb-1">
-                    <span className={`font-bold text-sm ${activity.color}`}>{activity.action}</span>
-                    <span className="text-xs text-muted font-mono">{activity.time}</span>
-                  </div>
-                  <div className="text-sm">
-                    Contract <Link href={`/contracts/${activity.contract}`} className="text-accent hover:underline font-mono">{activity.contract}</Link> by <strong>{activity.user}</strong>.
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Alerts Panel */}
-        <div className="card border-danger/30 bg-danger/5">
-          <div className="flex items-center justify-between border-b border-danger/10 pb-4 mb-4">
-            <h3 className="font-bold flex items-center gap-2 text-danger"><ShieldAlert size={16}/> Expiry & Compliance Alerts</h3>
-          </div>
-          {s.expiring > 0 ? (
-            <div className="flex flex-col gap-4">
-              <p className="text-sm text-danger-hover">
-                <strong>Attention Required:</strong> You have {s.expiring} contracts expiring in the next 30 days that require immediate renewal assessment.
-              </p>
-              <div className="bg-bg-card border border-danger/20 rounded-lg p-3">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="font-mono text-xs font-bold">CON-2026-00084</span>
-                  <span className="badge bg-danger/10 text-danger text-[10px]">3 Days Left</span>
-                </div>
-                <div className="text-sm font-medium mb-1">Microsoft Azure Enterprise Agreement</div>
-                <div className="text-xs text-muted">Vendor: Microsoft Corp.</div>
-              </div>
-              <div className="bg-bg-card border border-danger/20 rounded-lg p-3">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="font-mono text-xs font-bold">CON-2026-00091</span>
-                  <span className="badge bg-danger/10 text-danger text-[10px]">12 Days Left</span>
-                </div>
-                <div className="text-sm font-medium mb-1">Cisco Network Maintenance</div>
-                <div className="text-xs text-muted">Vendor: Cisco Systems</div>
-              </div>
-              <Link href="/contracts/expiring" className="btn btn-danger w-full justify-center mt-2">Manage Expiring Contracts</Link>
+          {/* Pipeline distribution */}
+          <div className="enterprise-panel">
+            <div className="enterprise-panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div className="enterprise-panel-title"><Activity /> Pipeline by Stage</div>
+              <Link href="/reports" className="btn btn-ghost btn-sm">
+                Reports <ArrowUpRight size={13} />
+              </Link>
             </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center py-10 text-success">
-              <CheckCircle size={48} className="opacity-50 mb-3" />
-              <p className="text-sm font-medium">All contracts are up to date.</p>
+            <div className="enterprise-panel-body">
+              {pipelineTotal === 0 ? (
+                <PanelEmpty icon={<Inbox size={20} />} message="No contracts in the pipeline yet." />
+              ) : (
+                <div style={{ height: 250 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={pipeline} margin={{ top: 6, right: 8, left: -20, bottom: 0 }} barCategoryGap="30%">
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                      <XAxis dataKey="stage" axisLine={false} tickLine={false} tick={{ fontSize: 11.5, fill: 'var(--text-muted)' }} />
+                      <YAxis axisLine={false} tickLine={false} allowDecimals={false} tick={{ fontSize: 11.5, fill: 'var(--text-muted)' }} />
+                      <Tooltip cursor={{ fill: 'var(--bg-card-hover)' }} content={<ChartTooltip />} />
+                      <Bar dataKey="count" name="Contracts" radius={[6, 6, 0, 0]} maxBarSize={52}>
+                        {pipeline.map((p, i) => <Cell key={i} fill={p.fill} />)}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Activity feed — real audit trail */}
+          {canReadAudit && (
+            <div className="enterprise-panel">
+              <div className="enterprise-panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                <div className="enterprise-panel-title"><Activity /> Recent Contract Activity</div>
+                <Link href="/admin/audit" className="btn btn-ghost btn-sm">
+                  Full audit trail <ArrowUpRight size={13} />
+                </Link>
+              </div>
+              <div className="enterprise-panel-body">
+                {activityQuery.isLoading ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <div key={i} className="skeleton" style={{ height: 46, borderRadius: 8 }} />
+                    ))}
+                  </div>
+                ) : activityQuery.isError ? (
+                  <PanelEmpty icon={<ShieldAlert size={20} />} message="Activity log unavailable." />
+                ) : activity.length === 0 ? (
+                  <PanelEmpty icon={<Inbox size={20} />} message="No contract activity recorded yet." />
+                ) : (
+                  <div className="cm-feed">
+                    {activity.map((a) => (
+                      <div key={a.id} className="cm-feed-item">
+                        <div className="cm-feed-dot"><FileSignature /></div>
+                        <div className="cm-feed-body">
+                          <div className="cm-feed-action">{categoryLabel(a.action)}</div>
+                          <div className="cm-feed-meta">
+                            {a.details ? `${a.details} · ` : ''}{a.user} ·{' '}
+                            {formatDistanceToNow(new Date(a.createdAt), { addSuffix: true })}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
 
+        {/* ── Sidebar ───────────────────────────────────────────────────── */}
+        <div className="enterprise-side">
+
+          {/* Expiry alerts — real EXPIRING_SOON contracts */}
+          <div className="enterprise-side-card">
+            <div className="enterprise-side-title"><ShieldAlert /> Expiry Alerts</div>
+            {expiringQuery.isLoading ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="skeleton" style={{ height: 56, borderRadius: 8 }} />
+                ))}
+              </div>
+            ) : expiring.length === 0 ? (
+              <div style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                gap: 8, padding: '22px 8px', color: 'var(--success)', textAlign: 'center',
+              }}>
+                <CheckCircle size={34} style={{ opacity: 0.55 }} />
+                <span style={{ fontSize: 12.5, fontWeight: 600 }}>No contracts expiring soon.</span>
+              </div>
+            ) : (
+              <>
+                {expiring.map((c) => {
+                  const d = daysLeft(c.expiryDate);
+                  return (
+                    <Link key={c.id} href={`/contracts/${c.id}`} className="cm-alert-row" style={{ textDecoration: 'none' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div className="cm-alert-title">{c.title}</div>
+                        <div className="cm-alert-sub">
+                          {c.contractNumber} · {c.counterparty}
+                        </div>
+                        <div className="cm-alert-sub" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <Calendar size={11} />
+                          {c.expiryDate ? format(new Date(c.expiryDate), 'MMM d, yyyy') : 'No expiry date'}
+                        </div>
+                      </div>
+                      {d !== null && (
+                        <span className="badge status-expiring-soon" style={{ flexShrink: 0 }}>
+                          {d < 0 ? 'Overdue' : d === 0 ? 'Today' : `${d}d`}
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+                <Link href="/contracts/expiring" className="btn btn-secondary btn-sm" style={{ width: '100%', justifyContent: 'center', marginTop: 12 }}>
+                  Manage expiring contracts <ArrowRight size={13} />
+                </Link>
+              </>
+            )}
+          </div>
+
+          {/* Category mix — real groupBy from stats */}
+          <div className="enterprise-side-card">
+            <div className="enterprise-side-title"><PieIcon /> Contracts by Category</div>
+            {categories.length === 0 ? (
+              <PanelEmpty icon={<Inbox size={20} />} message="No categories to show." />
+            ) : (
+              <>
+                <div style={{ height: 168, marginBottom: 10 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={categories}
+                        dataKey="count"
+                        nameKey="category"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={52}
+                        outerRadius={76}
+                        paddingAngle={3}
+                        stroke="var(--surface)"
+                        strokeWidth={2}
+                      >
+                        {categories.map((_, i) => (
+                          <Cell key={i} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<ChartTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="cm-legend">
+                  {categories.map((c, i) => (
+                    <div key={c.category} className="cm-legend-row">
+                      <span className="cm-legend-name">
+                        <span className="cm-legend-swatch" style={{ background: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }} />
+                        {categoryLabel(c.category)}
+                      </span>
+                      <span className="cm-legend-count">{c.count}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Quick links */}
+          <div className="enterprise-side-card">
+            <div className="enterprise-side-title"><LayoutGrid /> Quick Access</div>
+            <div className="enterprise-detail-list">
+              {[
+                { label: 'My contracts', href: '/contracts/my' },
+                { label: 'Assigned to me', href: '/contracts/assigned' },
+                { label: 'Awaiting review', href: '/contracts/review' },
+                { label: 'Awaiting approval', href: '/contracts/approval' },
+                { label: 'Executed', href: '/contracts/executed' },
+                { label: 'Archive', href: '/contracts/archive' },
+              ].map((l) => (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  className="enterprise-detail-row"
+                  style={{ textDecoration: 'none', color: 'inherit' }}
+                >
+                  <span className="enterprise-detail-label">{l.label}</span>
+                  <ArrowRight size={13} style={{ color: 'var(--text-muted)' }} />
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* Statuses excluded from the pipeline chart, surfaced honestly */}
+      {(num('expired') > 0 || num('archived') > 0) && (
+        <div className="enterprise-actionbar">
+          <div className="enterprise-actionbar-left">
+            <span className="enterprise-actionbar-title">Closed out</span>
+            <span className="badge status-expired">{num('expired')} expired</span>
+            <span className="badge status-terminated">{num('archived')} terminated</span>
+          </div>
+          <div className="enterprise-actionbar-actions">
+            <Link href="/contracts/archive" className="btn btn-ghost btn-sm">
+              View archive <ArrowRight size={13} />
+            </Link>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

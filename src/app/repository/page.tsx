@@ -168,7 +168,7 @@ export default function ContractRepositoryPage() {
                   padding: 16, 
                   borderBottom: '1px solid var(--border-light)', 
                   cursor: 'pointer',
-                  background: selectedContract?.id === contract.id ? 'var(--gold)' + '10' : 'transparent',
+                  background: selectedContract?.id === contract.id ? 'color-mix(in srgb, var(--gold) 12%, transparent)' : 'transparent',
                   borderLeft: selectedContract?.id === contract.id ? '3px solid var(--gold)' : '3px solid transparent'
                 }} 
                 onClick={() => setSelectedContract(contract)}
@@ -320,7 +320,7 @@ export default function ContractRepositoryPage() {
                       <span>{selectedContract.assignedOfficer}</span>
                     </div>
                   )}
-                  {selectedContract.value > 0 && (
+                  {selectedContract.value != null && selectedContract.value > 0 && (
                     <div className="detail-field">
                       <label>Contract Value</label>
                       <span>{selectedContract.value.toLocaleString()} {selectedContract.currency}</span>

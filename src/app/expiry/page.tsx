@@ -111,7 +111,7 @@ export default function ContractExpiryPage() {
       </div>
 
       {/* Overview Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
+      <div className="grid-kpi" style={{ marginBottom: 24 }}>
         {categories.map(cat => (
           <div 
             key={cat.key} 
@@ -120,7 +120,9 @@ export default function ContractExpiryPage() {
               padding: 16, 
               cursor: 'pointer',
               borderLeft: `4px solid ${cat.color}`,
-              background: selectedCategory === cat.key ? 'var(--gold)' + '10' : 'white'
+              background: selectedCategory === cat.key
+                ? 'color-mix(in srgb, var(--gold) 12%, var(--surface))'
+                : 'var(--surface)'
             }}
             onClick={() => setSelectedCategory(selectedCategory === cat.key ? null : cat.key)}
           >
@@ -131,9 +133,9 @@ export default function ContractExpiryPage() {
                 borderRadius: 999, 
                 fontSize: 11, 
                 fontWeight: 600,
-                background: cat.key === '30d' ? 'var(--danger)' + '15' : 
-                            cat.key === '60d' ? 'var(--warning)' + '15' : 
-                            cat.key === '90d' ? 'var(--accent)' + '15' : 'var(--border-light)',
+                background: cat.key === '30d' ? 'color-mix(in srgb, var(--danger) 15%, transparent)' :
+                            cat.key === '60d' ? 'color-mix(in srgb, var(--warning) 15%, transparent)' :
+                            cat.key === '90d' ? 'color-mix(in srgb, var(--accent) 15%, transparent)' : 'var(--border-light)',
                 color: cat.color
               }}>
                 {cat.contracts.length}
@@ -164,9 +166,9 @@ export default function ContractExpiryPage() {
                   borderRadius: 999, 
                   fontSize: 11, 
                   fontWeight: 600,
-                  background: cat.key === '30d' ? 'var(--danger)' + '15' : 
-                              cat.key === '60d' ? 'var(--warning)' + '15' : 
-                              cat.key === '90d' ? 'var(--accent)' + '15' : 'var(--border-light)',
+                  background: cat.key === '30d' ? 'color-mix(in srgb, var(--danger) 15%, transparent)' :
+                              cat.key === '60d' ? 'color-mix(in srgb, var(--warning) 15%, transparent)' :
+                              cat.key === '90d' ? 'color-mix(in srgb, var(--accent) 15%, transparent)' : 'var(--border-light)',
                   color: cat.color
                 }}>
                   {cat.contracts.length}

@@ -11,7 +11,7 @@ import type { LegalRequestDetail } from '@/types/advisory';
 
 export default function DispatchPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <RoleGuard roles={['admin_assistant', 'manager', 'legal_officer']}>
+    <RoleGuard roles={['admin_assistant', 'manager', 'legal_officer']} permission="advisory.dispatch">
       <DispatchPageContent params={params} />
     </RoleGuard>
   );

@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/session';
+import { hasAccess } from '@/lib/access';
 import { ensurePermissions, groupOf } from '@/lib/permissions';
 
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  if (!['manager', 'admin_assistant'].includes(user.role)) {
+  if (!hasAccess(user, { permission: 'admin.roles', roles: ['manager', 'admin_assistant'] })) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 

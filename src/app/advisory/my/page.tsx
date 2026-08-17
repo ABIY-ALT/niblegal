@@ -7,6 +7,7 @@ export default function MyAdvisoryRequestsPage() {
     <RequestTable
       scope="my"
       title="My Requests"
+      subtitle="Advisory requests you have submitted, and where each one stands."
       emptyMessage="You haven't submitted any legal advisory requests yet"
       showNewButton
     />

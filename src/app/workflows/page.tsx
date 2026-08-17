@@ -11,7 +11,7 @@ import AccessDenied from '@/components/AccessDenied';
 export default function WorkflowDashboard() {
   const [searchTerm, setSearchTerm] = useState('');
   
-  const isAdmin = currentUser.role === 'admin';
+  const isAdmin = currentUser.role === 'manager' || currentUser.role === 'admin_assistant';
 
   const { data, isLoading } = useQuery({
     queryKey: ['workflows'],

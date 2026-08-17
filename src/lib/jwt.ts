@@ -15,7 +15,7 @@ function b64url(data: ArrayBuffer | Uint8Array): string {
   return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
-function fromB64url(str: string): Uint8Array {
+function fromB64url(str: string): Uint8Array<ArrayBuffer> {
   const padded = str.replace(/-/g, '+').replace(/_/g, '/');
   const bin = atob(padded);
   const bytes = new Uint8Array(bin.length);

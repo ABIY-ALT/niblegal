@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/session';
+import { hasAccess } from '@/lib/access';
 import { logContractActivity } from '@/lib/contractHistory';
 import { notifyContractWorkflow } from '@/lib/notifyContract';
 
@@ -10,7 +11,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    if (!['legal_officer', 'manager', 'admin_assistant'].includes(user.role)) {
+    if (!hasAccess(user, { permission: 'contract.execute', roles: ['legal_officer', 'manager', 'admin_assistant'] })) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

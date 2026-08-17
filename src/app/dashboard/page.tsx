@@ -1,10 +1,10 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { contracts, advisoryRequests, USERS, getCMSStats, getLAHDStats, getAllAuditTrail, currentUser } from '@/data/store';
-import { CONTRACT_CATEGORY_LABELS, URGENCY_COLORS, CONTRACT_STATUS_COLORS, ADVISORY_STATUS_COLORS, CONTRACT_STATUS_LABELS, formatDate, timeAgo } from '@/utils/formatters';
+import { useQuery } from '@tanstack/react-query';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { formatDate, timeAgo } from '@/utils/formatters';
 import {
-  FileText, Scale, AlertTriangle, CheckCircle, Clock, TrendingUp, Users,
-  BarChart3, Activity, Zap, ArrowRight, Timer, Bell, Search, Plus, Upload,
+  FileText, Scale, AlertTriangle, CheckCircle, Clock, Users,
+  BarChart3, Activity, Zap, Bell, Search, Plus,
   FolderSearch, Calendar, ChevronRight, Briefcase
 } from 'lucide-react';
 import Link from 'next/link';
@@ -34,18 +34,11 @@ function ChartTooltip({ active, payload, label }: any) {
   );
 }
 
-// Simulated notifications separated by type
-const INITIAL_NOTIFICATIONS = {
-  critical: [
-    { id: 2, type: 'sla', title: 'SLA Breach Warning', message: 'Critical advisory NIB-LAHD-2026-00016 has breached its 24-hour SLA deadline.', time: '5 hours ago', read: false, link: '/advisory' },
-  ],
-  expiry: [
-    { id: 1, type: 'expiry', title: 'Contract Expiring Soon', message: 'Contract NIB-CMS-2026-00012 (Head Office Lease) expires in 25 days. Please initiate renewal.', time: '2 hours ago', read: false, link: '/contracts' },
-  ],
-  general: [
-    { id: 3, type: 'workflow', title: 'New Manager Approval Required', message: 'Contract NIB-CMS-2026-00028 has been submitted for your approval by Yonas Bekele.', time: 'Yesterday', read: true, link: '/contracts' },
-  ]
-};
+const CATEGORY_PALETTE = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#EAB308', '#ef4444', '#84cc16'];
+const titleCase = (s: string) => s.replace(/_/g, ' ').replace(/\w\S*/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
+
+const NON_TERMINAL_CONTRACT = ['ACTIVE', 'EXECUTED', 'EXPIRED', 'TERMINATED'];
+const TERMINAL_ADVISORY = ['CLOSED', 'ARCHIVED', 'DISPATCHED', 'REJECTED'];
 
 // ─── UI Components ─────────────────────────────────────────────────────────────
 
@@ -67,34 +60,11 @@ function BarChart({ data }: { data: { label: string; value: number; color: strin
   );
 }
 
-function DonutChart({ segments, size = 120 }: { segments: { value: number; color: string; label: string }[]; size?: number }) {
-  const total = segments.reduce((s, d) => s + d.value, 0) || 1;
-  const r = 45; const cx = 60; const cy = 60;
-  const circ = 2 * Math.PI * r;
-  let offset = 0;
+function StatCard({ label, value, sub, icon, color }: { label: string; value: number | string; sub?: string; icon: React.ReactNode; color: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 120 120">
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--border)" strokeWidth="16" />
-      {segments.map((seg, i) => {
-        const dash = (seg.value / total) * circ;
-        const el = (
-          <circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={seg.color} strokeWidth="16"
-            strokeDasharray={`${dash} ${circ - dash}`} strokeDashoffset={-offset}
-            strokeLinecap="round" style={{ transform: 'rotate(-90deg)', transformOrigin: '50% 50%', transition: 'stroke-dasharray 1s ease-out' }} />
-        );
-        offset += dash;
-        return el;
-      })}
-      <text x="60" y="66" textAnchor="middle" fontSize="22" fontWeight="800" fill="var(--text-primary)">{total}</text>
-    </svg>
-  );
-}
-
-function StatCard({ label, value, sub, icon, color, trend }: { label: string; value: number | string; sub?: string; icon: React.ReactNode; color: string; trend?: string }) {
-  return (
-    <div className="stat-card" style={{ 
-      position: 'relative', overflow: 'hidden', background: 'var(--bg-card)', 
-      border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', 
+    <div className="stat-card" style={{
+      position: 'relative', overflow: 'hidden', background: 'var(--bg-card)',
+      border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
       padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px',
       boxShadow: '0 4px 12px rgba(0,0,0,0.02)', transition: 'transform 0.2s, box-shadow 0.2s'
     }}>
@@ -102,7 +72,6 @@ function StatCard({ label, value, sub, icon, color, trend }: { label: string; va
         <div style={{ width: 44, height: 44, borderRadius: 12, background: `${color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', color }}>
           {icon}
         </div>
-        {trend && <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--success)', display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(16, 185, 129, 0.1)', padding: '4px 8px', borderRadius: 20 }}><TrendingUp size={12} />{trend}</div>}
       </div>
       <div style={{ marginTop: 8 }}>
         <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'Outfit, sans-serif', letterSpacing: '-0.02em' }}>{value}</div>
@@ -110,6 +79,35 @@ function StatCard({ label, value, sub, icon, color, trend }: { label: string; va
         {sub && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>{sub}</div>}
       </div>
       <div style={{ position: 'absolute', bottom: -20, right: -20, width: 100, height: 100, borderRadius: '50%', background: `radial-gradient(circle, ${color}10 0%, transparent 70%)`, pointerEvents: 'none' }} />
+    </div>
+  );
+}
+
+/* Placeholders so in-flight aggregates read as "loading" rather than as a
+   confident zero / "No data". */
+function StatCardSkeleton() {
+  return (
+    <div style={{
+      background: 'var(--bg-card)', border: '1px solid var(--border)',
+      borderRadius: 'var(--radius-lg)', padding: 20,
+      display: 'flex', flexDirection: 'column', gap: 8,
+    }}>
+      <div className="skeleton" style={{ width: 44, height: 44, borderRadius: 12 }} />
+      <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="skeleton" style={{ width: '50%', height: 30 }} />
+        <div className="skeleton" style={{ width: '75%', height: 14 }} />
+        <div className="skeleton" style={{ width: '60%', height: 12 }} />
+      </div>
+    </div>
+  );
+}
+
+function ChartSkeleton() {
+  return (
+    <div style={{ width: '100%', height: 200, display: 'flex', alignItems: 'flex-end', gap: 12, padding: '8px 0' }}>
+      {[62, 88, 45, 74, 55, 92].map((h, i) => (
+        <div key={i} className="skeleton" style={{ flex: 1, height: `${h}%`, borderRadius: '6px 6px 0 0' }} />
+      ))}
     </div>
   );
 }
@@ -135,87 +133,178 @@ function QuickActionBtn({ icon, label, href, primary = false }: { icon: React.Re
   );
 }
 
+async function fetchJson(url: string) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch ${url}`);
+  return res.json();
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [auditTrail, setAuditTrail] = useState<any[]>([]);
-  const cms = getCMSStats();
-  const lahd = getLAHDStats();
+  const userQuery = useCurrentUser();
+  const currentUser = userQuery.data;
+  const role = currentUser?.role;
+  const isManager = role === 'manager';
+  const isPrivileged = !!role && role !== 'requesting_organ';
   const now = new Date();
 
-  useEffect(() => {
-    setAuditTrail(getAllAuditTrail());
-  }, []);
+  // Org-wide aggregates (manager / legal_officer / admin_assistant only)
+  const summaryQuery = useQuery({
+    queryKey: ['dashboard-summary'],
+    queryFn: async () => (await fetchJson('/api/reports/summary')).data,
+    enabled: isPrivileged,
+  });
+  const auditQuery = useQuery({
+    queryKey: ['dashboard-audit'],
+    queryFn: async () => (await fetchJson('/api/reports/audit?limit=6')).data,
+    enabled: isPrivileged,
+  });
+  const advisoryDeadlinesQuery = useQuery({
+    queryKey: ['dashboard-advisory-deadlines'],
+    queryFn: () => fetchJson('/api/advisory/stats'),
+    enabled: isPrivileged,
+  });
+  const expiringContractsQuery = useQuery({
+    queryKey: ['dashboard-expiring-contracts'],
+    queryFn: async () => (await fetchJson('/api/contracts?status=EXPIRING_SOON&limit=5')).data,
+    enabled: isPrivileged,
+  });
 
-  // Alerts
-  const expiring = contracts.filter(c => c.status === 'expiring_soon');
-  const critical = advisoryRequests.filter(r => r.urgency === 'critical' && !['dispatched','closed'].includes(r.status));
-  const slaBreachedContracts = contracts.filter(c => c.slaDeadline && new Date(c.slaDeadline) < now && !['active','executed','expired','terminated'].includes(c.status));
-  const pendingReviews = contracts.filter(c => c.status === 'under_review').length;
-  const pendingApprovals = cms.pendingApproval + lahd.pendingApproval;
+  // Personal work items (legal_officer sees their assigned items; requesting_organ sees their own submissions)
+  const officerContractsQuery = useQuery({
+    queryKey: ['dashboard-officer-contracts'],
+    queryFn: async () => (await fetchJson('/api/contracts?scope=assigned&limit=100')).data,
+    enabled: role === 'legal_officer',
+  });
+  const officerAdvisoryQuery = useQuery({
+    queryKey: ['dashboard-officer-advisory', currentUser?.id],
+    queryFn: async () => (await fetchJson(`/api/advisory/requests?assigneeId=${currentUser!.id}&limit=100`)).data,
+    enabled: role === 'legal_officer' && !!currentUser,
+  });
+  const myContractsQuery = useQuery({
+    queryKey: ['dashboard-my-contracts'],
+    queryFn: async () => (await fetchJson('/api/contracts?scope=mine&limit=100')).data,
+    enabled: role === 'requesting_organ',
+  });
+  const myAdvisoryQuery = useQuery({
+    queryKey: ['dashboard-my-advisory', currentUser?.id],
+    queryFn: async () => (await fetchJson(`/api/advisory/requests?requesterId=${currentUser!.id}&limit=100`)).data,
+    enabled: role === 'requesting_organ' && !!currentUser,
+  });
 
-  // Work Queue (Role-based)
-  const isManager = currentUser.role === 'manager';
-  const isOfficer = currentUser.role === 'legal_officer';
-  const isRequesting = currentUser.role === 'requesting_organ';
+  const notificationsQuery = useQuery({
+    queryKey: ['dashboard-notifications'],
+    queryFn: () => fetchJson('/api/notifications?limit=5'),
+    enabled: !!currentUser,
+  });
 
-  let myContracts = contracts;
-  let myAdvisory = advisoryRequests;
-  if (isOfficer) {
-    myContracts = contracts.filter(c => c.assignedOfficer === currentUser.name);
-    myAdvisory = advisoryRequests.filter(r => r.assignedOfficer === currentUser.name);
-  } else if (isRequesting) {
-    myContracts = contracts.filter(c => c.requestedBy === currentUser.name);
-    myAdvisory = advisoryRequests.filter(r => r.requestedBy === currentUser.name);
+  if (!currentUser) {
+    if (userQuery.isError) {
+      return (
+        <div className="empty-state">
+          <p>Your session has expired. <Link href="/login">Sign in again</Link>.</p>
+        </div>
+      );
+    }
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+        <div className="spinner" />
+      </div>
+    );
   }
 
-  const draftsCount = myContracts.filter(c => c.status === 'draft').length;
-  const myPendingReviews = myContracts.filter(c => c.status === 'under_review').length;
-  const myPendingApprovals = isManager ? pendingApprovals : 0; // managers see all pending approvals
-  const overdueCount = myContracts.filter(c => c.slaDeadline && new Date(c.slaDeadline) < now && !['active','executed','expired','terminated'].includes(c.status)).length + 
-                       myAdvisory.filter(r => r.slaDeadline && new Date(r.slaDeadline) < now && !['dispatched','closed'].includes(r.status)).length;
+  const summary = summaryQuery.data as {
+    contracts: { total: number; active: number; draft: number; underReview: number; pendingApproval: number; expiring: number; totalValue: number; byCategory: { category: string; count: number }[] };
+    advisory: { total: number; pending: number; overdue: number; breached: number; byStatus: Record<string, number> };
+    officers: { id: string; name: string; contracts: number; advisory: number }[];
+    trends: { month: string; contracts: number; advisory: number; knowledge: number }[];
+  } | undefined;
 
-  // Charts
-  const catCounts = Object.keys(CONTRACT_CATEGORY_LABELS) as any[];
-  const contractsByCategory = catCounts.map(cat => ({
-    label: (CONTRACT_CATEGORY_LABELS as any)[cat].split(' ')[0],
-    value: contracts.filter(c => c.category === cat).length,
-    color: cat === 'service_agreement' ? '#3b82f6' : cat === 'lease' ? '#10b981' : cat === 'nda' ? '#f59e0b' : '#8b5cf6',
-  })).filter(d => d.value > 0);
+  const personalContracts: any[] = role === 'legal_officer' ? (officerContractsQuery.data ?? []) : role === 'requesting_organ' ? (myContractsQuery.data ?? []) : [];
+  const personalAdvisory: any[] = role === 'legal_officer' ? (officerAdvisoryQuery.data ?? []) : role === 'requesting_organ' ? (myAdvisoryQuery.data ?? []) : [];
 
-  const months = ['Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'];
-  const monthlyContracts = [3, 5, 2, 7, 4, contracts.length];
-  const monthlyAdvisory = [2, 3, 4, 2, 5, advisoryRequests.length];
-  const monthlyData = months.map((m, i) => ({ month: m, Contracts: monthlyContracts[i], Advisory: monthlyAdvisory[i] }));
+  const draftsCount = isManager || role === 'admin_assistant'
+    ? (summary?.contracts.draft ?? 0)
+    : personalContracts.filter((c) => c.status === 'DRAFT').length;
+  const myPendingReviews = isManager || role === 'admin_assistant'
+    ? (summary?.contracts.underReview ?? 0)
+    : personalContracts.filter((c) => c.status === 'UNDER_REVIEW').length;
+  const myPendingApprovals = isManager
+    ? (summary?.contracts.pendingApproval ?? 0) + (summary?.advisory.byStatus?.PENDING_APPROVAL ?? 0)
+    : 0;
+  const overdueCount = isManager || role === 'admin_assistant'
+    ? (summary?.advisory.overdue ?? 0)
+    : personalContracts.filter((c) => c.slaDeadline && new Date(c.slaDeadline) < now && !NON_TERMINAL_CONTRACT.includes(c.status)).length +
+      personalAdvisory.filter((r) => r.slaDeadline && new Date(r.slaDeadline) < now && !TERMINAL_ADVISORY.includes(r.status)).length;
 
-  const officers = USERS.filter(u => u.role === 'legal_officer');
+  const pendingApprovals = (summary?.contracts.pendingApproval ?? 0) + (summary?.advisory.byStatus?.PENDING_APPROVAL ?? 0);
+  const slaBreached = summary?.advisory.breached ?? 0;
 
-  // Deadlines
-  const upcomingDeadlines = [
-    ...contracts.filter(c => c.status === 'expiring_soon').map(c => ({ id: c.id, title: c.title, date: c.expiryDate, type: 'Expiry', color: 'var(--warning)' })),
-    ...contracts.filter(c => c.slaDeadline && !['active','executed','expired','terminated'].includes(c.status)).map(c => ({ id: c.id, title: c.title, date: c.slaDeadline, type: 'SLA Due', color: 'var(--danger)' })),
-    ...advisoryRequests.filter(r => r.slaDeadline && !['dispatched','closed'].includes(r.status)).map(r => ({ id: r.id, title: r.title, date: r.slaDeadline, type: 'SLA Due', color: 'var(--danger)' }))
-  ].sort((a, b) => new Date(a.date!).getTime() - new Date(b.date!).getTime()).slice(0, 5);
+  const contractsByCategory = (summary?.contracts.byCategory ?? []).map((c, i) => ({
+    label: titleCase(c.category).split(' ')[0],
+    value: c.count,
+    color: CATEGORY_PALETTE[i % CATEGORY_PALETTE.length],
+  }));
+
+  const monthlyData = (summary?.trends ?? []).map((t) => ({ month: t.month, Contracts: t.contracts, Advisory: t.advisory }));
+
+  const officers = summary?.officers ?? [];
+
+  // Upcoming deadlines
+  type Deadline = { id: string; title: string; date: string; type: string; color: string };
+  let upcomingDeadlines: Deadline[] = [];
+  if (isPrivileged) {
+    const contractDeadlines: Deadline[] = (expiringContractsQuery.data ?? []).map((c: any) => ({
+      id: c.id, title: c.title, date: c.expiryDate, type: 'Expiry', color: 'var(--warning)',
+    }));
+    const advisoryDeadlines: Deadline[] = (advisoryDeadlinesQuery.data?.upcomingDeadlines ?? [])
+      .filter((r: any) => !TERMINAL_ADVISORY.includes(r.status))
+      .map((r: any) => ({ id: r.id, title: r.subject, date: r.slaDeadline, type: 'SLA Due', color: 'var(--danger)' }));
+    upcomingDeadlines = [...contractDeadlines, ...advisoryDeadlines]
+      .filter((d) => d.date)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .slice(0, 5);
+  } else {
+    const contractDeadlines: Deadline[] = personalContracts
+      .filter((c) => c.status === 'EXPIRING_SOON' && c.expiryDate)
+      .map((c) => ({ id: c.id, title: c.title, date: c.expiryDate, type: 'Expiry', color: 'var(--warning)' }));
+    const advisoryDeadlines: Deadline[] = personalAdvisory
+      .filter((r) => r.slaDeadline && !TERMINAL_ADVISORY.includes(r.status))
+      .map((r) => ({ id: r.id, title: r.subject, date: r.slaDeadline, type: 'SLA Due', color: 'var(--danger)' }));
+    upcomingDeadlines = [...contractDeadlines, ...advisoryDeadlines]
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .slice(0, 5);
+  }
+
+  // Recent activity
+  type ActivityRow = { id: string; module: string; action: string; userName: string; details: string; timestamp: string };
+  const recentActivity: ActivityRow[] = isPrivileged
+    ? (auditQuery.data ?? []).map((a: any) => ({ id: a.id, module: a.module, action: a.action.toLowerCase(), userName: a.user, details: a.details, timestamp: a.createdAt }))
+    : [
+        ...personalContracts.map((c) => ({ id: c.id, module: 'CMS', action: 'updated', userName: currentUser.name, details: c.title, timestamp: c.updatedAt ?? c.createdAt })),
+        ...personalAdvisory.map((r) => ({ id: r.id, module: 'LAHD', action: 'updated', userName: currentUser.name, details: r.subject, timestamp: r.updatedAt ?? r.createdAt })),
+      ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 6);
+
+  const notifications: { id: string; title: string; body: string; priority: string; createdAt: string }[] = notificationsQuery.data?.notifications ?? [];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, paddingBottom: 40 }}>
 
       {/* ── Top Bar: Global Search & Welcome ──────────────────────────────── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-card)', padding: '20px 24px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', boxShadow: '0 2px 10px rgba(0,0,0,0.02)' }}>
-        <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 20, flexWrap: 'wrap', background: 'var(--bg-card)', padding: '20px 24px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', boxShadow: '0 2px 10px rgba(0,0,0,0.02)' }}>
+        <div style={{ minWidth: 0, flex: '1 1 260px' }}>
           <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)', margin: 0, fontFamily: 'Outfit, sans-serif' }}>Welcome back, {currentUser.name.split(' ')[0]}</h1>
           <p style={{ fontSize: 14, color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>Here is what's happening in your legal operations today.</p>
         </div>
-        <div style={{ position: 'relative', width: 400 }}>
-          <Search size={18} color="var(--text-muted)" style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)' }} />
-          <input 
-            type="text" 
-            placeholder="Search contracts, requests, officers, keywords..." 
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            style={{ 
-              width: '100%', padding: '12px 16px 12px 42px', borderRadius: 30, 
+        <div style={{ position: 'relative', flex: '1 1 260px', maxWidth: 400, minWidth: 0 }}>
+          <Search size={18} color="var(--text-muted)" style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+          <input
+            type="search"
+            aria-label="Search contracts, requests, officers and keywords"
+            placeholder="Search contracts, requests, officers, keywords..."
+            style={{
+              width: '100%', padding: '12px 16px 12px 42px', borderRadius: 30,
               border: '1px solid var(--border)', background: 'var(--bg-body)',
               fontSize: 14, color: 'var(--text-primary)', outline: 'none',
               transition: 'border-color 0.2s, box-shadow 0.2s'
@@ -227,125 +316,166 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Alert Banner ──────────────────────────────────────────────────── */}
-      {(expiring.length > 0 || critical.length > 0 || slaBreachedContracts.length > 0) && (
+      {isPrivileged && ((summary?.contracts.expiring ?? 0) > 0 || (summary?.advisory.breached ?? 0) > 0) && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {expiring.length > 0 && (
+          {(summary?.contracts.expiring ?? 0) > 0 && (
             <div className="alert alert-warning" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 16, borderRadius: 'var(--radius-md)', fontWeight: 500 }}>
-              <AlertTriangle size={18} /><strong>{expiring.length} contract(s)</strong>&nbsp;expiring within 30 days — immediate renewal action required.
+              <AlertTriangle size={18} /><strong>{summary?.contracts.expiring} contract(s)</strong>&nbsp;expiring soon — renewal action required.
             </div>
           )}
-          {critical.length > 0 && (
+          {(summary?.advisory.breached ?? 0) > 0 && (
             <div className="alert alert-danger" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 16, borderRadius: 'var(--radius-md)', fontWeight: 500 }}>
-              <Zap size={18} /><strong>{critical.length} critical advisory</strong>&nbsp;request(s) pending — SLA deadline approaching.
+              <Zap size={18} /><strong>{summary?.advisory.breached} advisory</strong>&nbsp;request(s) have breached their SLA deadline.
             </div>
           )}
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: 24 }}>
-        
+      <div className="dash-layout">
+
         {/* LEFT COLUMN */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-          
+
           {/* Quick Actions */}
           <div>
             <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
               <Zap size={16} color="var(--accent)" /> Quick Actions
             </h2>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+            <div className="grid-quick">
               <QuickActionBtn icon={<Plus size={24} />} label="New Contract" href="/contracts/new" primary />
               <QuickActionBtn icon={<Scale size={24} />} label="New Legal Advice" href="/advisory/new" />
-              {!isRequesting && <QuickActionBtn icon={<Upload size={24} />} label="Upload Contract" href="/repository/upload" />}
+              {/* "Upload Contract" pointed at /repository/upload, which does not
+                  exist — it 404'd and duplicated "Search Repository" below.
+                  Re-add it once an upload route exists. */}
               <QuickActionBtn icon={<FolderSearch size={24} />} label="Search Repository" href="/repository" />
             </div>
           </div>
 
           {/* KPI Cards */}
-          <div>
-            <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <BarChart3 size={16} color="var(--accent)" /> Key Performance Indicators
-            </h2>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
-              <StatCard label="Total Contracts" value={cms.totalContracts} sub="All time repository" icon={<FileText size={20} />} color="#EAB308" trend="+12% this month" />
-              <StatCard label="Active Contracts" value={cms.active} sub="Currently in force" icon={<CheckCircle size={20} />} color="#10b981" />
-              <StatCard label="Pending Approvals" value={pendingApprovals} sub="Awaiting manager sign-off" icon={<Clock size={20} />} color="#f59e0b" />
-              <StatCard label="SLA Breached" value={lahd.slaBreached + slaBreachedContracts.length} sub="Overdue tasks" icon={<AlertTriangle size={20} />} color="#ef4444" />
+          {isPrivileged ? (
+            <div>
+              <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <BarChart3 size={16} color="var(--accent)" /> Key Performance Indicators
+              </h2>
+              {summaryQuery.isLoading ? (
+                <div className="grid-kpi">
+                  {Array.from({ length: 4 }).map((_, i) => <StatCardSkeleton key={i} />)}
+                </div>
+              ) : summaryQuery.isError ? (
+                <div className="alert alert-danger" style={{ marginBottom: 0 }}>
+                  <AlertTriangle size={18} />
+                  <span>Could not load performance indicators. <button type="button" className="btn btn-sm btn-ghost" style={{ marginLeft: 8 }} onClick={() => summaryQuery.refetch()}>Retry</button></span>
+                </div>
+              ) : (
+                <div className="grid-kpi">
+                  <StatCard label="Total Contracts" value={summary?.contracts.total ?? 0} sub="All time repository" icon={<FileText size={20} />} color="#EAB308" />
+                  <StatCard label="Active Contracts" value={summary?.contracts.active ?? 0} sub="Currently in force" icon={<CheckCircle size={20} />} color="#10b981" />
+                  <StatCard label="Pending Approvals" value={pendingApprovals} sub="Awaiting manager sign-off" icon={<Clock size={20} />} color="#f59e0b" />
+                  <StatCard label="SLA Breached" value={slaBreached} sub="Advisory overdue tasks" icon={<AlertTriangle size={20} />} color="#ef4444" />
+                </div>
+              )}
             </div>
-          </div>
-
-          {/* Charts Section */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 24 }}>
-            {/* Contracts by Category */}
-            <div className="card" style={{ padding: 24 }}>
-              <div className="card-header" style={{ marginBottom: 20 }}><span className="card-title" style={{ fontSize: 16 }}>Contracts by Category</span></div>
-              {contractsByCategory.length > 0 ? <BarChart data={contractsByCategory} /> : <div className="empty-state">No data</div>}
-            </div>
-
-            {/* Monthly Legal Activities */}
-            <div className="card" style={{ padding: 24 }}>
-              <div className="card-header" style={{ marginBottom: 20 }}><span className="card-title" style={{ fontSize: 16 }}>Monthly Legal Activities</span></div>
-              <div style={{ width: '100%', height: 200 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={monthlyData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="gradContracts" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#EAB308" stopOpacity={0.35} />
-                        <stop offset="100%" stopColor="#EAB308" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="gradAdvisory" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#2563EB" stopOpacity={0.30} />
-                        <stop offset="100%" stopColor="#2563EB" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickLine={false} axisLine={{ stroke: 'var(--border)' }} />
-                    <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickLine={false} axisLine={false} allowDecimals={false} width={40} />
-                    <Tooltip content={<ChartTooltip />} />
-                    <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 600, paddingTop: 8 }} />
-                    <Area type="monotone" dataKey="Contracts" stroke="#EAB308" strokeWidth={2.5} fill="url(#gradContracts)" dot={{ r: 3, fill: '#EAB308', strokeWidth: 0 }} activeDot={{ r: 5 }} />
-                    <Area type="monotone" dataKey="Advisory" stroke="#2563EB" strokeWidth={2.5} fill="url(#gradAdvisory)" dot={{ r: 3, fill: '#2563EB', strokeWidth: 0 }} activeDot={{ r: 5 }} />
-                  </AreaChart>
-                </ResponsiveContainer>
+          ) : (
+            <div>
+              <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <BarChart3 size={16} color="var(--accent)" /> My Overview
+              </h2>
+              <div className="grid-kpi">
+                <StatCard label="My Contracts" value={personalContracts.length} sub="Submitted by you / your department" icon={<FileText size={20} />} color="#EAB308" />
+                <StatCard label="My Requests" value={personalAdvisory.length} sub="Advisory requests you filed" icon={<Scale size={20} />} color="#10b981" />
+                <StatCard label="Drafts" value={draftsCount} sub="Not yet submitted" icon={<Clock size={20} />} color="#f59e0b" />
+                <StatCard label="Overdue" value={overdueCount} sub="Past SLA deadline" icon={<AlertTriangle size={20} />} color="#ef4444" />
               </div>
             </div>
-          </div>
+          )}
+
+          {/* Charts Section */}
+          {isPrivileged && (
+            <div className="grid-charts">
+              {/* Contracts by Category */}
+              <div className="card" style={{ padding: 24 }}>
+                <div className="card-header" style={{ marginBottom: 20 }}><span className="card-title" style={{ fontSize: 16 }}>Contracts by Category</span></div>
+                {summaryQuery.isLoading
+                  ? <ChartSkeleton />
+                  : contractsByCategory.length > 0
+                    ? <BarChart data={contractsByCategory} />
+                    : <div className="empty-state" style={{ padding: '56px 20px' }}><p>No category data yet.</p></div>}
+              </div>
+
+              {/* Monthly Legal Activities */}
+              <div className="card" style={{ padding: 24 }}>
+                <div className="card-header" style={{ marginBottom: 20 }}><span className="card-title" style={{ fontSize: 16 }}>Monthly Legal Activities</span></div>
+                {summaryQuery.isLoading ? <ChartSkeleton /> : monthlyData.length === 0 ? (
+                  <div className="empty-state" style={{ padding: '56px 20px' }}><p>No activity recorded yet.</p></div>
+                ) : (
+                <div style={{ width: '100%', height: 200 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={monthlyData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="gradContracts" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#EAB308" stopOpacity={0.35} />
+                          <stop offset="100%" stopColor="#EAB308" stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="gradAdvisory" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#2563EB" stopOpacity={0.30} />
+                          <stop offset="100%" stopColor="#2563EB" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                      <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickLine={false} axisLine={{ stroke: 'var(--border)' }} />
+                      <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickLine={false} axisLine={false} allowDecimals={false} width={40} />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 600, paddingTop: 8 }} />
+                      <Area type="monotone" dataKey="Contracts" stroke="#EAB308" strokeWidth={2.5} fill="url(#gradContracts)" dot={{ r: 3, fill: '#EAB308', strokeWidth: 0 }} activeDot={{ r: 5 }} />
+                      <Area type="monotone" dataKey="Advisory" stroke="#2563EB" strokeWidth={2.5} fill="url(#gradAdvisory)" dot={{ r: 3, fill: '#2563EB', strokeWidth: 0 }} activeDot={{ r: 5 }} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Recent Activity Timeline */}
           <div className="card" style={{ padding: 24 }}>
             <div className="card-header" style={{ marginBottom: 20 }}>
               <span className="card-title" style={{ fontSize: 16 }}><Activity size={18} style={{ display: 'inline', marginRight: 8, color: 'var(--accent)' }} />Recent Activity</span>
-              <Link href="/reports" style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4, textDecoration: 'none' }}>Full Audit Trail <ChevronRight size={14} /></Link>
+              {isPrivileged && <Link href="/reports/audit" style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4, textDecoration: 'none' }}>Full Audit Trail <ChevronRight size={14} /></Link>}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {auditTrail.slice(0, 6).map((entry, i) => (
-                <div key={entry.id} style={{ display: 'flex', gap: 16, position: 'relative' }}>
-                  {i !== 5 && <div style={{ position: 'absolute', left: 19, top: 40, bottom: -16, width: 2, background: 'var(--border)' }} />}
-                  <div style={{ width: 40, height: 40, borderRadius: '50%', background: entry.module === 'CMS' ? 'rgba(59,130,246,0.1)' : 'rgba(245,158,11,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, zIndex: 1, border: '2px solid var(--bg-card)' }}>
-                    {entry.action === 'approved' ? <CheckCircle size={18} color="var(--success)" /> : 
-                     entry.action === 'submitted' ? <FileText size={18} color="var(--accent)" /> : 
-                     <Briefcase size={18} color="var(--text-muted)" />}
-                  </div>
-                  <div style={{ flex: 1, paddingBottom: i !== 5 ? 16 : 0 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div style={{ fontSize: 14, color: 'var(--text-primary)' }}>
-                        <span style={{ fontWeight: 700 }}>{entry.userName}</span> {entry.action} — <span style={{ color: 'var(--text-secondary)' }}>{entry.details}</span>
+            {recentActivity.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {recentActivity.map((entry, i) => (
+                  <div key={entry.id} style={{ display: 'flex', gap: 16, position: 'relative' }}>
+                    {i !== recentActivity.length - 1 && <div style={{ position: 'absolute', left: 19, top: 40, bottom: -16, width: 2, background: 'var(--border)' }} />}
+                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: entry.module === 'CMS' ? 'rgba(59,130,246,0.1)' : 'rgba(245,158,11,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, zIndex: 1, border: '2px solid var(--bg-card)' }}>
+                      {entry.action === 'approved' ? <CheckCircle size={18} color="var(--success)" /> :
+                       entry.action === 'submitted' ? <FileText size={18} color="var(--accent)" /> :
+                       <Briefcase size={18} color="var(--text-muted)" />}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0, paddingBottom: i !== recentActivity.length - 1 ? 16 : 0 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+                        <div style={{ fontSize: 14, color: 'var(--text-primary)', minWidth: 0, flex: '1 1 200px', overflowWrap: 'anywhere' }}>
+                          <span style={{ fontWeight: 700 }}>{entry.userName}</span> {entry.action} — <span style={{ color: 'var(--text-secondary)' }}>{entry.details}</span>
+                        </div>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>{timeAgo(entry.timestamp)}</span>
                       </div>
-                      <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', marginLeft: 16 }}>{timeAgo(entry.timestamp)}</span>
-                    </div>
-                    <div style={{ marginTop: 6 }}>
-                      <span className="badge" style={{ fontSize: 11, background: 'var(--bg-input)', color: 'var(--text-muted)' }}>{entry.module} Module</span>
+                      <div style={{ marginTop: 6 }}>
+                        <span className="badge" style={{ fontSize: 11, background: 'var(--bg-input)', color: 'var(--text-muted)' }}>{entry.module} Module</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state"><p>No recent activity yet.</p></div>
+            )}
           </div>
-          
+
         </div>
 
         {/* RIGHT COLUMN */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-          
+
           {/* My Work Queue */}
           <div className="card" style={{ padding: 20, background: 'linear-gradient(180deg, var(--bg-card) 0%, rgba(234,179,8,0.04) 100%)', border: '1px solid rgba(234,179,8,0.25)' }}>
             <div className="card-header" style={{ marginBottom: 16 }}>
@@ -382,12 +512,12 @@ export default function DashboardPage() {
             </div>
             {upcomingDeadlines.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {upcomingDeadlines.map((dl, i) => (
-                  <div key={i} style={{ padding: '12px', borderLeft: `3px solid ${dl.color}`, background: 'var(--bg-input)', borderRadius: '0 var(--radius-md) var(--radius-md) 0' }}>
+                {upcomingDeadlines.map((dl) => (
+                  <div key={dl.id} style={{ padding: '12px', borderLeft: `3px solid ${dl.color}`, background: 'var(--bg-input)', borderRadius: '0 var(--radius-md) var(--radius-md) 0' }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{dl.title}</div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
                       <span style={{ color: dl.color, fontWeight: 600 }}>{dl.type}</span>
-                      <span style={{ color: 'var(--text-muted)' }}>{formatDate(dl.date as string)}</span>
+                      <span style={{ color: 'var(--text-muted)' }}>{formatDate(dl.date)}</span>
                     </div>
                   </div>
                 ))}
@@ -397,56 +527,34 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* Notifications Separated */}
+          {/* Notifications */}
           <div className="card" style={{ padding: 20 }}>
             <div className="card-header" style={{ marginBottom: 16 }}>
               <span className="card-title" style={{ fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}><Bell size={18} color="var(--info)" /> Notifications</span>
               <Link href="/notifications" style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none' }}>View All</Link>
             </div>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-              {INITIAL_NOTIFICATIONS.critical.length > 0 && (
-                <div>
-                  <h3 style={{ fontSize: 12, textTransform: 'uppercase', color: 'var(--danger)', fontWeight: 800, marginBottom: 8, letterSpacing: '0.05em' }}>Critical Alerts</h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {INITIAL_NOTIFICATIONS.critical.map(n => (
-                      <div key={n.id} style={{ padding: 12, background: 'rgba(239,68,68,0.05)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(239,68,68,0.2)' }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--danger)', marginBottom: 4 }}>{n.title}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{n.message}</div>
+            {notifications.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {notifications.map((n) => {
+                  const critical = n.priority === 'CRITICAL' || n.priority === 'HIGH';
+                  return (
+                    <div key={n.id} style={{
+                      padding: 12, borderRadius: 'var(--radius-sm)',
+                      background: critical ? 'rgba(239,68,68,0.05)' : 'var(--bg-input)',
+                      border: critical ? '1px solid rgba(239,68,68,0.2)' : '1px solid transparent',
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, minWidth: 0, overflowWrap: 'anywhere', color: critical ? 'var(--danger)' : 'var(--text-primary)' }}>{n.title}</div>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>{timeAgo(n.createdAt)}</span>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {INITIAL_NOTIFICATIONS.expiry.length > 0 && (
-                <div>
-                  <h3 style={{ fontSize: 12, textTransform: 'uppercase', color: 'var(--warning)', fontWeight: 800, marginBottom: 8, letterSpacing: '0.05em' }}>Expiry Alerts</h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {INITIAL_NOTIFICATIONS.expiry.map(n => (
-                      <div key={n.id} style={{ padding: 12, background: 'rgba(245,158,11,0.05)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(245,158,11,0.2)' }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#d97706', marginBottom: 4 }}>{n.title}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{n.message}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {INITIAL_NOTIFICATIONS.general.length > 0 && (
-                <div>
-                  <h3 style={{ fontSize: 12, textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 800, marginBottom: 8, letterSpacing: '0.05em' }}>General</h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {INITIAL_NOTIFICATIONS.general.map(n => (
-                      <div key={n.id} style={{ padding: 12, background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)' }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>{n.title}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{n.message}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2, overflowWrap: 'anywhere' }}>{n.body}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No notifications.</div>
+            )}
           </div>
 
           {/* Officer Workload (For Managers) */}
@@ -456,10 +564,8 @@ export default function DashboardPage() {
                 <span className="card-title" style={{ fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}><Users size={18} color="var(--accent)" /> Officer Workload</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {officers.map(officer => {
-                  const cmsCount = contracts.filter(c => c.assignedOfficer === officer.name && !['active','executed','expired','terminated'].includes(c.status)).length;
-                  const lahdCount = advisoryRequests.filter(r => r.assignedOfficer === officer.name && !['dispatched','closed'].includes(r.status)).length;
-                  const total = cmsCount + lahdCount;
+                {officers.map((officer) => {
+                  const total = officer.contracts + officer.advisory;
                   const maxLoad = 8;
                   const pct = Math.min((total / maxLoad) * 100, 100);
                   const loadColor = pct > 75 ? 'var(--danger)' : pct > 50 ? 'var(--warning)' : 'var(--success)';
@@ -467,7 +573,7 @@ export default function DashboardPage() {
                     <div key={officer.id}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13 }}>
                         <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{officer.name}</span>
-                        <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{cmsCount} CMS · {lahdCount} LAHD</span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{officer.contracts} CMS · {officer.advisory} LAHD</span>
                       </div>
                       <div style={{ height: 8, background: 'var(--border)', borderRadius: 4, overflow: 'hidden' }}>
                         <div style={{ height: '100%', width: `${pct}%`, background: loadColor, borderRadius: 4, transition: 'width 0.4s ease' }} />

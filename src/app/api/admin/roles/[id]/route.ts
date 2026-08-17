@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/session';
+import { hasAccess } from '@/lib/access';
 
 async function requireAdmin() {
   const user = await getCurrentUser();
   if (!user) return { error: 'Unauthorized', status: 401 as const };
-  if (!['manager', 'admin_assistant'].includes(user.role)) return { error: 'Forbidden', status: 403 as const };
+  if (!hasAccess(user, { permission: 'admin.roles', roles: ['manager', 'admin_assistant'] })) {
+    return { error: 'Forbidden — requires the admin.roles permission', status: 403 as const };
+  }
   return { user };
 }
 

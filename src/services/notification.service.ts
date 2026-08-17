@@ -87,7 +87,7 @@ export const NotificationService = {
   /** Get paginated notifications for a user */
   async getForUser(
     userId: string,
-    opts: { page?: number; limit?: number; status?: string; type?: string } = {}
+    opts: { page?: number; limit?: number; status?: string; type?: string; priority?: string } = {}
   ) {
     const page = opts.page ?? 1;
     const limit = opts.limit ?? 20;
@@ -96,6 +96,7 @@ export const NotificationService = {
     const where: any = { recipientId: userId };
     if (opts.status && opts.status !== 'ALL') where.status = opts.status;
     if (opts.type && opts.type !== 'ALL') where.type = opts.type;
+    if (opts.priority && opts.priority !== 'ALL') where.priority = opts.priority;
 
     const [items, total] = await Promise.all([
       prisma.notification.findMany({

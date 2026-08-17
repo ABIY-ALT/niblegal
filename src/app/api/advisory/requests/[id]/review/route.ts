@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/session';
+import { hasAccess } from '@/lib/access';
 import { logLegalActivity } from '@/lib/advisoryHistory';
 import { transitionStage } from '@/lib/workflow';
 import type { LegalRequestStatus } from '@prisma/client';
@@ -16,7 +17,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    if (user.role !== 'legal_officer') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    if (!hasAccess(user, { permission: 'advisory.draft', roles: ['legal_officer'] })) {
+      return NextResponse.json({ error: 'Forbidden — requires the advisory.draft permission' }, { status: 403 });
+    }
 
     const { decision, comments } = await req.json();
     if (!['APPROVED', 'RETURNED', 'REJECTED'].includes(decision)) {

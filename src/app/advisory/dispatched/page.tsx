@@ -7,6 +7,7 @@ export default function DispatchedOpinionsPage() {
     <RequestTable
       scope="dispatched"
       title="Dispatched Opinions"
+      subtitle="Opinions delivered to the requesting department."
       emptyMessage="No legal opinions have been dispatched yet"
     />
   );

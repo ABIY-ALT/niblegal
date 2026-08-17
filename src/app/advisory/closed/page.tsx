@@ -7,6 +7,7 @@ export default function ClosedAdvisoryRequestsPage() {
     <RequestTable
       scope="closed"
       title="Closed Requests"
+      subtitle="Completed and archived advisory matters, retained for the record."
       emptyMessage="No closed or archived requests found"
       showFilters
     />

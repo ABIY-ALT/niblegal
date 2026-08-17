@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { RoleGuard } from '@/components/advisory/RoleGuard';
+import { ANY_KNOWLEDGE } from '@/lib/access';
 import { StatusBadge } from '@/components/knowledge/StatusBadge';
 import { ConfidentialityBadge } from '@/components/knowledge/ConfidentialityBadge';
 import { MetadataPanel } from '@/components/knowledge/MetadataPanel';
@@ -128,7 +129,7 @@ export default function KnowledgeDocumentDetailPage({ params }: { params: Promis
   const latestVersion = data.versions[0];
 
   return (
-    <RoleGuard roles={['manager', 'legal_officer', 'admin_assistant', 'requesting_organ']}>
+    <RoleGuard roles={['manager', 'legal_officer', 'admin_assistant', 'requesting_organ']} anyOf={ANY_KNOWLEDGE}>
       <div className="flex flex-col gap-5">
         <div>
           <Link href="/knowledge/list" className="btn btn-ghost btn-sm pl-0 mb-3">

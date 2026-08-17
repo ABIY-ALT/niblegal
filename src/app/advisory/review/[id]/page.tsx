@@ -13,7 +13,7 @@ import type { ApprovalDecision, LegalRequestDetail } from '@/types/advisory';
 
 export default function ReviewOpinionPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <RoleGuard roles={['legal_officer']}>
+    <RoleGuard roles={['legal_officer']} permission="advisory.draft">
       <ReviewOpinionPageContent params={params} />
     </RoleGuard>
   );

@@ -1,12 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { Plus, LayoutGrid, List as ListIcon, Search as SearchIcon } from 'lucide-react';
+import {
+  Plus, LayoutGrid, List as ListIcon, Search as SearchIcon,
+  BookOpen, Folder, ChevronRight, Home, Inbox, FileText, LayoutDashboard,
+} from 'lucide-react';
 import { FolderTree } from '@/components/knowledge/FolderTree';
-import { CategoryCard, DocumentCard } from '@/components/knowledge/DocumentCard';
+import { DocumentCard } from '@/components/knowledge/DocumentCard';
 import { DocumentTable } from '@/components/knowledge/DocumentTable';
 import type { KnowledgeCategoryOption, KnowledgeDocumentListItem } from '@/types/knowledge';
 
@@ -22,9 +25,19 @@ const TAB_TO_CATEGORY_CODE: Record<string, string> = {
 };
 
 export default function RepositoryHomePage() {
+  return (
+    <Suspense fallback={null}>
+      <RepositoryHome />
+    </Suspense>
+  );
+}
+
+function RepositoryHome() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [selected, setSelected] = useState<KnowledgeCategoryOption | null>(null);
   const [view, setView] = useState<'folder' | 'list'>('folder');
+  const [search, setSearch] = useState('');
 
   const { data: categories } = useQuery({
     queryKey: ['knowledge-categories'],
@@ -54,7 +67,7 @@ export default function RepositoryHomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, flatCategories]);
 
-  const { data: docsInCategory } = useQuery({
+  const { data: docsInCategory, isLoading: docsLoading } = useQuery({
     queryKey: ['knowledge-documents-browse', selected?.id],
     queryFn: async () => {
       const params = new URLSearchParams({ limit: '24' });
@@ -63,73 +76,195 @@ export default function RepositoryHomePage() {
       const json = await res.json();
       return json.data as KnowledgeDocumentListItem[];
     },
-    enabled: view === 'folder',
+    enabled: view === 'folder' && !!selected,
   });
 
   const rootCategories = useMemo(() => categories ?? [], [categories]);
+  const totalDocuments = useMemo(
+    () => rootCategories.reduce((sum, c) => sum + (c.documentCount ?? 0), 0),
+    [rootCategories],
+  );
+
+  const submitSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = search.trim();
+    router.push(q ? `/knowledge/search?q=${encodeURIComponent(q)}` : '/knowledge/search');
+  };
 
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex justify-between items-center flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold mb-1">Legal Knowledge Repository</h1>
-          <p className="text-muted text-sm">Browse contract templates, legal opinions, policies, regulations, and research.</p>
-        </div>
-        <div className="flex gap-3">
-          <Link href="/knowledge/search" className="btn btn-secondary"><SearchIcon size={16} /> Search Repository</Link>
-          <Link href="/knowledge/new" className="btn btn-primary"><Plus size={16} /> Upload Document</Link>
+    <div className="enterprise-page">
+
+      {/* ── Hero ─────────────────────────────────────────────────────────── */}
+      <div className="enterprise-hero">
+        <div className="enterprise-hero-content">
+          <div style={{ minWidth: 0 }}>
+            <div className="enterprise-kicker">
+              <span className="enterprise-id">KNOWLEDGE</span>
+              <span className="badge status-active">Repository</span>
+            </div>
+            <h1 className="enterprise-title">Legal Knowledge Repository</h1>
+            <p className="enterprise-subtitle">
+              Contract templates, standard clauses, legal opinions, policies, NBE
+              directives and research — organised, versioned and searchable.
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 260 }}>
+            <form onSubmit={submitSearch} className="cm-search">
+              <SearchIcon />
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search the repository…"
+                aria-label="Search the knowledge repository"
+              />
+            </form>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Link href="/knowledge/dashboard" className="btn btn-ghost btn-sm" style={{ flex: 1, justifyContent: 'center' }}>
+                <LayoutDashboard size={14} /> Dashboard
+              </Link>
+              <Link href="/knowledge/new" className="btn btn-primary btn-sm" style={{ flex: 1, justifyContent: 'center' }}>
+                <Plus size={14} /> Upload
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="flex gap-5 items-start flex-wrap lg:flex-nowrap">
-        <div className="card w-full lg:w-72 shrink-0">
-          <div className="card-header"><span className="card-title">Categories</span></div>
-          <button
-            type="button"
-            className={`w-full text-left text-sm py-1.5 px-2 rounded-md mb-1 ${!selected ? '' : ''}`}
-            style={{ background: !selected ? 'var(--bg-card-hover)' : undefined }}
-            onClick={() => setSelected(null)}
-          >
-            All Categories
-          </button>
-          <FolderTree categories={rootCategories} selectedId={selected?.id} onSelect={setSelected} />
+      {/* ── Browser ──────────────────────────────────────────────────────── */}
+      <div className="enterprise-layout" style={{ gridTemplateColumns: '270px minmax(0, 1fr)' }}>
+
+        {/* Category tree */}
+        <div className="enterprise-side">
+          <div className="enterprise-side-card">
+            <div className="enterprise-side-title"><Folder /> Categories</div>
+            <button
+              type="button"
+              className={`kn-tree-root${!selected ? ' active' : ''}`}
+              onClick={() => setSelected(null)}
+            >
+              <BookOpen size={14} />
+              All categories
+              <span className="cm-count" style={{ marginLeft: 'auto' }}>{totalDocuments}</span>
+            </button>
+            <FolderTree categories={rootCategories} selectedId={selected?.id} onSelect={setSelected} />
+          </div>
         </div>
 
-        <div className="flex-1 min-w-0 flex flex-col gap-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-lg font-semibold">{selected ? selected.name : 'All Categories'}</h2>
-            <div className="flex gap-1">
-              <button className={`btn btn-sm ${view === 'folder' ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => setView('folder')}>
-                <LayoutGrid size={14} />
-              </button>
-              <button className={`btn btn-sm ${view === 'list' ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => setView('list')}>
-                <ListIcon size={14} />
-              </button>
-            </div>
-          </div>
+        {/* Content */}
+        <div className="enterprise-main">
+          <div className="enterprise-panel">
+            <div className="cm-toolbar">
+              <nav style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, minWidth: 0 }} aria-label="Breadcrumb">
+                <Link href="/dashboard" style={{ color: 'var(--text-muted)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <Home size={13} /> Home
+                </Link>
+                <ChevronRight size={13} style={{ color: 'var(--text-muted)' }} />
+                <button
+                  type="button"
+                  onClick={() => setSelected(null)}
+                  style={{
+                    background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                    font: 'inherit', color: selected ? 'var(--text-muted)' : 'var(--text-primary)',
+                    fontWeight: selected ? 400 : 700,
+                  }}
+                >
+                  Repository
+                </button>
+                {selected && (
+                  <>
+                    <ChevronRight size={13} style={{ color: 'var(--text-muted)' }} />
+                    <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{selected.name}</span>
+                  </>
+                )}
+              </nav>
 
-          {view === 'folder' ? (
-            !selected ? (
-              <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
-                {rootCategories.map((c) => (
-                  <CategoryCard key={c.id} category={c} onClick={() => setSelected(c)} />
-                ))}
+              <div className="cm-segment" role="group" aria-label="View mode">
+                <button
+                  className={view === 'folder' ? 'active' : ''}
+                  onClick={() => setView('folder')}
+                  aria-pressed={view === 'folder'}
+                  aria-label="Card view"
+                >
+                  <LayoutGrid size={15} />
+                </button>
+                <button
+                  className={view === 'list' ? 'active' : ''}
+                  onClick={() => setView('list')}
+                  aria-pressed={view === 'list'}
+                  aria-label="Table view"
+                >
+                  <ListIcon size={15} />
+                </button>
               </div>
-            ) : (
-              <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
-                {docsInCategory?.length === 0 ? (
-                  <div className="empty-state col-span-full"><p>No documents in this category yet.</p></div>
+            </div>
+
+            {view === 'folder' && (
+              <div className="enterprise-panel-body">
+                {!selected ? (
+                  rootCategories.length === 0 ? (
+                    <div className="empty-state" style={{ padding: '40px 16px' }}>
+                      <Inbox size={28} style={{ color: 'var(--text-muted)' }} />
+                      <p style={{ fontSize: 13 }}>No categories configured yet.</p>
+                    </div>
+                  ) : (
+                    <div className="kn-category-grid">
+                      {rootCategories.map((c) => (
+                        <button key={c.id} type="button" className="kn-category-card" onClick={() => setSelected(c)}>
+                          <span className="kn-category-icon"><Folder size={19} /></span>
+                          <span className="kn-category-name">{c.name}</span>
+                          <span className="kn-category-count">{c.documentCount ?? 0} items</span>
+                        </button>
+                      ))}
+                    </div>
+                  )
+                ) : docsLoading ? (
+                  <div className="kn-doc-grid">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <div key={i} className="skeleton" style={{ height: 138, borderRadius: 'var(--radius-md)' }} />
+                    ))}
+                  </div>
+                ) : !docsInCategory || docsInCategory.length === 0 ? (
+                  <div className="empty-state" style={{ padding: '40px 16px', textAlign: 'center' }}>
+                    <div style={{
+                      width: 56, height: 56, margin: '0 auto 12px', display: 'flex',
+                      alignItems: 'center', justifyContent: 'center', borderRadius: 16,
+                      background: 'var(--bg-input)', border: '1px solid var(--border)',
+                    }}>
+                      <FileText size={24} style={{ color: 'var(--text-muted)' }} />
+                    </div>
+                    <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 5 }}>
+                      Nothing in {selected.name} yet
+                    </h3>
+                    <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
+                      Upload the first document to this category.
+                    </p>
+                    <Link href="/knowledge/new" className="btn btn-primary btn-sm">
+                      <Plus size={14} /> Upload Document
+                    </Link>
+                  </div>
                 ) : (
-                  docsInCategory?.map((d) => <DocumentCard key={d.id} doc={d} />)
+                  <div className="kn-doc-grid">
+                    {docsInCategory.map((d) => <DocumentCard key={d.id} doc={d} />)}
+                  </div>
                 )}
               </div>
-            )
-          ) : (
+            )}
+          </div>
+
+          {view === 'list' && (
             <DocumentTable
               scope="all"
               title=""
+              embedded
               categoryId={selected?.id}
-              emptyMessage="No documents found in this category"
+              showFilters
+              emptyMessage={
+                selected
+                  ? `No documents in ${selected.name} yet.`
+                  : 'No documents in the repository yet.'
+              }
             />
           )}
         </div>

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/session';
+import { hasAccess } from '@/lib/access';
 import { generateContractNumber } from '@/lib/contractNumber';
+import { withUniqueRetry } from '@/lib/sequence';
 import { logContractActivity } from '@/lib/contractHistory';
-import { ContractCategory } from '@prisma/client';
-
+// import { ContractCategory } from '@prisma/client';
 interface ImportRow {
   title?: string;
   category?: string;
@@ -20,7 +21,7 @@ interface ImportRow {
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  if (!['manager', 'admin_assistant'].includes(user.role)) {
+  if (!hasAccess(user, { permission: 'contract.create', roles: ['manager', 'admin_assistant'] })) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
@@ -33,7 +34,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Import is limited to 1000 rows per batch' }, { status: 400 });
     }
 
-    const validCategories = Object.values(ContractCategory) as string[];
     let imported = 0;
     const skipped: string[] = [];
 
@@ -41,28 +41,29 @@ export async function POST(req: NextRequest) {
       const title = row.title?.trim();
       if (!title) { skipped.push('(row missing title)'); continue; }
 
-      const category = (row.category && validCategories.includes(row.category) ? row.category : 'OTHER') as ContractCategory;
+      const category = (row.category && row.category.trim() !== '' ? row.category : 'OTHER');
       const value = row.value != null && row.value !== '' ? Number(String(row.value).replace(/[^0-9.]/g, '')) : null;
 
-      const contractNumber = await generateContractNumber();
-      const contract = await prisma.contract.create({
-        data: {
-          contractNumber,
-          title,
-          category,
-          counterparty: row.counterparty?.trim() || '—',
-          status: 'DRAFT',
-          value: Number.isFinite(value) ? value : null,
-          requesterId: user.id,
-          requestingDepartmentId: row.requestingDepartmentId || user.departmentId || null,
-          tags: ['imported'],
-        },
-      });
+      const contract = await withUniqueRetry(async () =>
+        prisma.contract.create({
+          data: {
+            contractNumber: await generateContractNumber(),
+            title,
+            category,
+            counterparty: row.counterparty?.trim() || '—',
+            status: 'DRAFT',
+            value: Number.isFinite(value) ? value : null,
+            requesterId: user.id,
+            requestingDepartmentId: row.requestingDepartmentId || user.departmentId || null,
+            tags: ['imported'],
+          },
+        }),
+      );
       await logContractActivity({
         contractId: contract.id,
         actorId: user.id,
         action: 'IMPORTED',
-        description: `Contract ${contractNumber} imported as draft by ${user.name}`,
+        description: `Contract ${contract.contractNumber} imported as draft by ${user.name}`,
         toValue: 'DRAFT',
       });
       imported++;

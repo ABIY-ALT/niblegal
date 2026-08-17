@@ -3,32 +3,84 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Bell, AlertTriangle, Zap, CheckCircle, Clock, Trash2, Filter, Mail, Pin, Star, Check, Megaphone, Inbox, Send, Edit, RefreshCw } from 'lucide-react';
+import { Bell, AlertTriangle, Zap, CheckCircle, Clock, Trash2, Filter, Mail, Check, Megaphone, Inbox, Send, Edit, RefreshCw } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
-export default function NotificationCenter() {
+type NotificationTab = 'notifications' | 'messages' | 'announcements';
+
+type NotificationCenterProps = {
+  initialTab?: NotificationTab;
+  initialFilter?: string;
+  initialStatus?: string;
+  initialPriority?: string;
+};
+
+type Mailbox = 'inbox' | 'sent';
+
+type MessageUser = {
+  id: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  roleName?: string;
+  departmentName?: string | null;
+  role?: { name: string };
+};
+
+type MessageItem = {
+  id: string;
+  body: string;
+  isRead: boolean;
+  createdAt: string;
+  thread: { id: string; subject: string };
+  sender: MessageUser;
+  recipient: MessageUser;
+};
+
+export default function NotificationCenter({
+  initialTab = 'notifications',
+  initialFilter = 'ALL',
+  initialStatus = 'ALL',
+  initialPriority = 'ALL',
+}: NotificationCenterProps) {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<'notifications' | 'messages' | 'announcements'>('notifications');
-  const [filter, setFilter] = useState('ALL');
-  const [status, setStatus] = useState('ALL');
+  const [activeTab, setActiveTab] = useState<NotificationTab>(initialTab);
+  const [filter, setFilter] = useState(initialFilter);
+  const [status, setStatus] = useState(initialStatus);
+  const [priority] = useState(initialPriority);
+  const [mailbox, setMailbox] = useState<Mailbox>('inbox');
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeForm, setComposeForm] = useState({ recipientId: '', subject: '', body: '' });
+  const [composeError, setComposeError] = useState<string | null>(null);
 
   // ─── Queries ────────────────────────────────────────────────────────
   const { data: notifData, isLoading: loadingNotifs } = useQuery({
-    queryKey: ['notifications', filter, status],
+    queryKey: ['notifications', filter, status, priority],
     queryFn: async () => {
-      const res = await fetch(`/api/notifications?type=${filter}&status=${status}`);
+      const res = await fetch(`/api/notifications?type=${filter}&status=${status}&priority=${priority}`);
       if (!res.ok) throw new Error('Failed to fetch notifications');
       return res.json();
     }
   });
 
   const { data: messageData, isLoading: loadingMessages } = useQuery({
-    queryKey: ['messages'],
+    queryKey: ['messages', mailbox],
     queryFn: async () => {
-      const res = await fetch('/api/messages');
+      const res = await fetch(`/api/messages?type=${mailbox}`);
       if (!res.ok) throw new Error('Failed to fetch messages');
       return res.json();
     }
+  });
+
+  const { data: usersData } = useQuery({
+    queryKey: ['message-users'],
+    queryFn: async () => {
+      const res = await fetch('/api/messages/users');
+      if (!res.ok) throw new Error('Failed to fetch users');
+      return res.json();
+    },
+    enabled: composeOpen,
   });
 
   // ─── Mutations ──────────────────────────────────────────────────────
@@ -51,6 +103,28 @@ export default function NotificationCenter() {
       await fetch(`/api/notifications/${id}`, { method: 'DELETE' });
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] })
+  });
+
+  const sendMessage = useMutation({
+    mutationFn: async () => {
+      setComposeError(null);
+      const res = await fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(composeForm),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Failed to send message');
+      return json;
+    },
+    onSuccess: () => {
+      setComposeOpen(false);
+      setComposeForm({ recipientId: '', subject: '', body: '' });
+      setMailbox('sent');
+      setActiveTab('messages');
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
+    },
+    onError: (error) => setComposeError(error instanceof Error ? error.message : 'Failed to send message'),
   });
 
   // ─── Helpers ────────────────────────────────────────────────────────
@@ -78,6 +152,19 @@ export default function NotificationCenter() {
   const unreadMsgCount = notifData?.stats?.unreadMessages || 0;
   const notifications = notifData?.notifications || [];
   const announcements = notifData?.announcements || [];
+  const messages: MessageItem[] = messageData?.messages || [];
+  const users: MessageUser[] = usersData?.users || [];
+
+  const formatPerson = (person?: MessageUser) => {
+    if (!person) return 'Unknown user';
+    if (person.name) return person.name;
+    return `${person.firstName ?? ''} ${person.lastName ?? ''}`.trim() || person.email || 'Unknown user';
+  };
+
+  const submitCompose = (event: React.FormEvent) => {
+    event.preventDefault();
+    sendMessage.mutate();
+  };
 
   return (
     <div className="max-w-6xl mx-auto flex flex-col gap-6">
@@ -96,7 +183,9 @@ export default function NotificationCenter() {
           </div>
         </div>
         <div className="flex gap-3">
-          <button className="btn btn-secondary"><Edit size={16} /> Compose</button>
+          <button className="btn btn-secondary" onClick={() => { setActiveTab('messages'); setComposeOpen(true); }}>
+            <Edit size={16} /> Compose
+          </button>
           <button className="btn btn-primary" onClick={() => markAllRead.mutate()} disabled={unreadCount === 0 || markAllRead.isPending}>
             <Check size={16} /> Mark All Read
           </button>
@@ -116,7 +205,7 @@ export default function NotificationCenter() {
             onClick={() => setActiveTab(t.id as any)}
           >
             {t.icon} {t.label} 
-            {t.badge > 0 && <span className="tab-count bg-danger text-white">{t.badge}</span>}
+            {!!t.badge && t.badge > 0 && <span className="tab-count bg-danger text-white">{t.badge}</span>}
           </button>
         ))}
       </div>
@@ -166,8 +255,24 @@ export default function NotificationCenter() {
             <div className="card card-sm">
               <h3 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">Mailbox</h3>
               <div className="flex flex-col gap-1">
-                <button className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium bg-accent/10 text-accent"><Inbox size={14}/> Inbox</button>
-                <button className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-secondary hover:bg-card-hover"><Send size={14}/> Sent</button>
+                <button
+                  onClick={() => setMailbox('inbox')}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium ${mailbox === 'inbox' ? 'bg-accent/10 text-accent' : 'text-secondary hover:bg-card-hover'}`}
+                >
+                  <Inbox size={14}/> Inbox
+                </button>
+                <button
+                  onClick={() => setMailbox('sent')}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium ${mailbox === 'sent' ? 'bg-accent/10 text-accent' : 'text-secondary hover:bg-card-hover'}`}
+                >
+                  <Send size={14}/> Sent
+                </button>
+                <button
+                  onClick={() => setComposeOpen(true)}
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-secondary hover:bg-card-hover"
+                >
+                  <Edit size={14}/> Compose
+                </button>
               </div>
             </div>
           )}
@@ -220,9 +325,34 @@ export default function NotificationCenter() {
           {/* MESSAGES TAB */}
           {activeTab === 'messages' && (
             loadingMessages ? <div className="p-12 text-center text-muted">Loading messages...</div> :
-            <div className="p-20 text-center text-muted flex flex-col items-center gap-3">
+            messages.length === 0 ? <div className="p-20 text-center text-muted flex flex-col items-center gap-3">
               <Mail size={48} className="opacity-20" />
-              <p>Inbox is empty.</p>
+              <p>{mailbox === 'inbox' ? 'Inbox is empty.' : 'No sent messages yet.'}</p>
+              <button className="btn btn-primary btn-sm mt-2" onClick={() => setComposeOpen(true)}><Edit size={14}/> Compose Message</button>
+            </div> :
+            <div className="flex flex-col divide-y divide-border">
+              {messages.map((message) => (
+                <div key={message.id} className={`p-5 hover:bg-card-hover transition-colors ${!message.isRead && mailbox === 'inbox' ? 'bg-accent/5' : ''}`}>
+                  <div className="flex justify-between items-start gap-4 mb-2">
+                    <div>
+                      <h3 className="text-sm font-bold m-0 text-primary">{message.thread.subject}</h3>
+                      <div className="text-xs text-muted mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                        <span><strong>From:</strong> {formatPerson(message.sender)}{message.sender.email ? ` (${message.sender.email})` : ''}</span>
+                        <span><strong>To:</strong> {formatPerson(message.recipient)}{message.recipient.email ? ` (${message.recipient.email})` : ''}</span>
+                      </div>
+                    </div>
+                    <span className="text-xs text-muted flex items-center gap-1 shrink-0">
+                      <Clock size={12}/> {formatDistanceToNow(new Date(message.createdAt))} ago
+                    </span>
+                  </div>
+                  <p className="text-sm text-secondary leading-relaxed whitespace-pre-wrap">{message.body}</p>
+                  <div className="flex gap-2 mt-3 flex-wrap">
+                    <span className="badge bg-bg-input text-muted">{mailbox === 'inbox' ? 'Received' : 'Sent'}</span>
+                    {message.sender.role?.name && <span className="badge bg-bg-input text-muted">Sender: {message.sender.role.name}</span>}
+                    {message.recipient.role?.name && <span className="badge bg-bg-input text-muted">Receiver: {message.recipient.role.name}</span>}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
@@ -251,6 +381,66 @@ export default function NotificationCenter() {
           )}
         </div>
       </div>
+
+      {composeOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setComposeOpen(false)}>
+          <form className="card w-full max-w-[560px]" onSubmit={submitCompose} onClick={(event) => event.stopPropagation()}>
+            <div className="flex justify-between items-center border-b border-border pb-3 mb-4">
+              <h2 className="text-lg font-bold m-0 flex items-center gap-2"><Edit size={18} className="text-accent" /> New Message</h2>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setComposeOpen(false)}>Close</button>
+            </div>
+
+            {composeError && <div className="alert alert-danger">{composeError}</div>}
+
+            <div className="flex flex-col gap-4">
+              <div className="form-group">
+                <label className="form-label">Receiver</label>
+                <select
+                  className="form-control"
+                  value={composeForm.recipientId}
+                  onChange={(event) => setComposeForm((prev) => ({ ...prev, recipientId: event.target.value }))}
+                  required
+                >
+                  <option value="">Select user...</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {formatPerson(user)} - {user.roleName}{user.departmentName ? `, ${user.departmentName}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Subject</label>
+                <input
+                  className="form-control"
+                  value={composeForm.subject}
+                  onChange={(event) => setComposeForm((prev) => ({ ...prev, subject: event.target.value }))}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Message</label>
+                <textarea
+                  className="form-control"
+                  rows={6}
+                  value={composeForm.body}
+                  onChange={(event) => setComposeForm((prev) => ({ ...prev, body: event.target.value }))}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-5 pt-4 border-t border-border">
+              <button type="button" className="btn btn-ghost" onClick={() => setComposeOpen(false)}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={sendMessage.isPending}>
+                <Send size={16}/> {sendMessage.isPending ? 'Sending...' : 'Send Message'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

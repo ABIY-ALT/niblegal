@@ -7,6 +7,7 @@ export default function ClauseLibraryPage() {
     <DocumentTable
       scope="clauses"
       title="Legal Clause Library"
+      subtitle="Standard clauses — confidentiality, termination, jurisdiction, indemnity and more."
       emptyMessage="No standard clauses found — confidentiality, termination, jurisdiction, force majeure, indemnity, payment, and dispute resolution clauses live here"
       showFilters
       showNewButton

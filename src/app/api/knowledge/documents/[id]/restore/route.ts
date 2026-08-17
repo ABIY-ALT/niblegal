@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/session';
+import { hasAccess } from '@/lib/access';
 import { logKnowledgeActivity } from '@/lib/knowledgeHistory';
 import { transitionKnowledgeStage } from '@/lib/knowledgeWorkflow';
 
@@ -9,7 +10,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    if (!['admin_assistant', 'manager'].includes(user.role)) {
+    if (!hasAccess(user, { permission: 'knowledge.approve', roles: ['admin_assistant', 'manager'] })) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

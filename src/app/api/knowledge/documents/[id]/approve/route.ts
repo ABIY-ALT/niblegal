@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/session';
+import { hasAccess } from '@/lib/access';
 import { logKnowledgeActivity } from '@/lib/knowledgeHistory';
 import { transitionKnowledgeStage } from '@/lib/knowledgeWorkflow';
 import { notifyKnowledge } from '@/lib/notifyKnowledge';
@@ -17,7 +18,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    if (user.role !== 'manager') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    if (!hasAccess(user, { permission: 'knowledge.approve', roles: ['manager'] })) {
+      return NextResponse.json({ error: 'Forbidden — requires the knowledge.approve permission' }, { status: 403 });
+    }
 
     const { decision, comments } = await req.json();
     if (!['APPROVED', 'RETURNED', 'REJECTED'].includes(decision)) {

@@ -7,6 +7,7 @@ export default function DraftAdvisoryOpinionsPage() {
     <RequestTable
       scope="drafts"
       title="Draft Opinions"
+      subtitle="Legal opinions you are currently drafting, before peer review."
       emptyMessage="You have no legal opinions in drafting"
     />
   );

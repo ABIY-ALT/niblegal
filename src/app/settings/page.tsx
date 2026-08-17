@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { 
-  Settings, Shield, Mail, Hash, Calendar, HardDrive, Key, Link2, 
-  Database, ToggleLeft, Activity, Info, Save, Server, ShieldCheck, Play 
+import {
+  Settings, Shield, Mail, Hash, Calendar, HardDrive, Key, Link2,
+  Database, ToggleLeft, Activity, Info, Save, Server, ShieldCheck, Play, Clock
 } from 'lucide-react';
 import { currentUser } from '@/data/store';
 import AccessDenied from '@/components/AccessDenied';
@@ -24,7 +24,7 @@ export default function SystemSettingsPage() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const queryClient = useQueryClient();
 
-  const isAdmin = currentUser.role === 'admin';
+  const isAdmin = currentUser.role === 'manager' || currentUser.role === 'admin_assistant';
 
   const { data, isLoading } = useQuery({
     queryKey: ['system-settings'],
@@ -51,7 +51,7 @@ export default function SystemSettingsPage() {
   const handleSave = (type: string, e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const payload = Object.fromEntries(formData.entries());
+    const payload: Record<string, unknown> = Object.fromEntries(formData.entries());
     
     // Type coercions
     if (type === 'security') {
@@ -136,7 +136,7 @@ export default function SystemSettingsPage() {
 
               <div className="mt-4">
                 <h3 className="text-sm font-bold text-primary mb-3">Recent Application Logs</h3>
-                <div className="border border-border rounded-lg overflow-hidden bg-bg-base">
+                <div className="border border-border rounded-lg overflow-x-auto bg-bg-base">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-bg-input text-muted font-semibold">
                       <tr>
@@ -282,7 +282,7 @@ export default function SystemSettingsPage() {
               </h2>
               <p className="text-sm text-secondary mb-4">Manage API keys for third-party integrations (e.g., Core Banking, ERP).</p>
               
-              <div className="border border-border rounded-lg overflow-hidden bg-bg-base">
+              <div className="border border-border rounded-lg overflow-x-auto bg-bg-base">
                   <table className="w-full text-left text-sm">
                     <thead className="bg-bg-input text-muted font-semibold text-xs uppercase">
                       <tr>

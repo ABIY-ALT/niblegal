@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/session';
+import { hasAccess } from '@/lib/access';
 import { contractApprovalSchema } from '@/lib/validations/contract';
 import { logContractActivity } from '@/lib/contractHistory';
 import { transitionContractStage } from '@/lib/contractWorkflow';
 import { notifyContractWorkflow } from '@/lib/notifyContract';
+import { assertCanApprove, SegregationError } from '@/lib/approvalGuards';
 import type { ContractStatus, ContractApprovalStage } from '@prisma/client';
 
 /**
@@ -18,7 +20,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    if (user.role !== 'manager') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    if (!hasAccess(user, { permission: 'contract.approve', roles: ['manager'] })) {
+      return NextResponse.json({ error: 'Forbidden — requires the contract.approve permission' }, { status: 403 });
+    }
 
     const { decision, comments, delegatedToId } = contractApprovalSchema.parse(await req.json());
     if (['REJECTED', 'RETURNED'].includes(decision) && !comments?.trim()) {
@@ -34,10 +38,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: `Cannot approve a contract in ${existing.status} status` }, { status: 400 });
     }
 
-    const lastApproval = await prisma.contractApproval.findFirst({
+    const priorApprovals = await prisma.contractApproval.findMany({
       where: { contractId: id },
       orderBy: { decidedAt: 'desc' },
+      select: { approverId: true, decision: true, stage: true },
     });
+
+    // Maker–checker: the approver must not be the requester, the assigned
+    // officer, or someone who already signed an earlier stage.
+    try {
+      assertCanApprove(
+        user.id,
+        { requesterId: existing.requesterId, assigneeId: existing.assigneeId },
+        priorApprovals,
+      );
+    } catch (e) {
+      if (e instanceof SegregationError) {
+        return NextResponse.json({ error: e.message }, { status: 403 });
+      }
+      throw e;
+    }
+
+    const lastApproval = priorApprovals[0];
     const stage: ContractApprovalStage =
       lastApproval?.stage === 'DIVISION_MANAGER' &&
       lastApproval.decision === 'APPROVED' &&

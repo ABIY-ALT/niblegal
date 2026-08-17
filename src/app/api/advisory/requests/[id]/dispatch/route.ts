@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/session';
+import { hasAccess } from '@/lib/access';
 import { generateReferenceNumber } from '@/lib/requestNumber';
 import { logLegalActivity } from '@/lib/advisoryHistory';
 import { transitionStage } from '@/lib/workflow';
@@ -12,7 +13,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    if (!['admin_assistant', 'manager', 'legal_officer'].includes(user.role)) {
+    if (!hasAccess(user, { permission: 'advisory.dispatch', roles: ['admin_assistant', 'manager', 'legal_officer'] })) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

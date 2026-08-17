@@ -7,6 +7,7 @@ export default function PendingReviewPage() {
     <RequestTable
       scope="review"
       title="Pending Review"
+      subtitle="Drafted opinions awaiting peer review by the legal team."
       emptyMessage="No legal opinions are currently awaiting peer review"
     />
   );

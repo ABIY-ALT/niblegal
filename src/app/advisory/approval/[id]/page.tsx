@@ -12,7 +12,7 @@ import type { ApprovalDecision, LegalRequestDetail, UserRef } from '@/types/advi
 
 export default function ManagerApprovalPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <RoleGuard roles={['manager']}>
+    <RoleGuard roles={['manager']} permission="advisory.approve">
       <ManagerApprovalPageContent params={params} />
     </RoleGuard>
   );

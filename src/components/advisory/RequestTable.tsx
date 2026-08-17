@@ -1,10 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useReactTable, getCoreRowModel, flexRender, type ColumnDef } from '@tanstack/react-table';
-import { Search, Plus, ChevronLeft, ChevronRight, FileText, FileSpreadsheet } from 'lucide-react';
+import {
+  Search, Plus, ChevronLeft, ChevronRight, FileText, FileSpreadsheet,
+  Filter, X, Home, Inbox, Users, RefreshCw,
+} from 'lucide-react';
 import { format } from 'date-fns';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { StatusBadge } from './StatusBadge';
@@ -18,11 +21,21 @@ export type RequestScope =
 interface Props {
   scope: RequestScope;
   title: string;
+  subtitle?: string;
   emptyMessage?: string;
   showFilters?: boolean;
   showBulkActions?: boolean;
   showNewButton?: boolean;
 }
+
+const ALL_STATUSES = [
+  'DRAFT', 'SUBMITTED', 'VALIDATED', 'ASSIGNED', 'DRAFTING', 'REVIEW', 'RETURNED',
+  'PENDING_APPROVAL', 'APPROVED', 'DISPATCHED', 'CLOSED', 'ARCHIVED', 'REJECTED', 'ESCALATED',
+];
+const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT', 'CRITICAL'];
+
+const prettyEnum = (v: string) =>
+  v.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase());
 
 function buildScopeParams(scope: RequestScope, userId?: string): Record<string, string> {
   switch (scope) {
@@ -47,17 +60,29 @@ function buildScopeParams(scope: RequestScope, userId?: string): Record<string, 
   }
 }
 
-export function RequestTable({ scope, title, emptyMessage, showFilters, showBulkActions, showNewButton }: Props) {
+export function RequestTable({
+  scope, title, subtitle, emptyMessage, showFilters, showBulkActions, showNewButton,
+}: Props) {
   const { data: currentUser } = useCurrentUser();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
+  const [showFilterDrawer, setShowFilterDrawer] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [reassigning, setReassigning] = useState(false);
+  const [exporting, setExporting] = useState<'pdf' | 'xlsx' | null>(null);
   const limit = 15;
+
+  /* The query key includes the search term, so binding it directly to the input
+     fired a fresh request on every keystroke. Debounce before it reaches the key. */
+  useEffect(() => {
+    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
   const needsUser = scope === 'my' || scope === 'assigned' || scope === 'drafts';
   const scopeParams = useMemo(() => buildScopeParams(scope, currentUser?.id), [scope, currentUser?.id]);
@@ -67,8 +92,7 @@ export function RequestTable({ scope, title, emptyMessage, showFilters, showBulk
     queryFn: async () => {
       const res = await fetch('/api/advisory/categories');
       if (!res.ok) throw new Error('Failed to load categories');
-      const json = await res.json();
-      return json.data as LegalRequestCategoryOption[];
+      return (await res.json()).data as LegalRequestCategoryOption[];
     },
     enabled: !!showFilters,
   });
@@ -78,17 +102,16 @@ export function RequestTable({ scope, title, emptyMessage, showFilters, showBulk
     queryFn: async () => {
       const res = await fetch('/api/advisory/officers');
       if (!res.ok) throw new Error('Failed to load officers');
-      const json = await res.json();
-      return json.data as UserRef[];
+      return (await res.json()).data as UserRef[];
     },
     enabled: !!showBulkActions,
   });
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['advisory-requests', scope, page, search, statusFilter, categoryFilter, priorityFilter, currentUser?.id],
+  const { data, isLoading, isFetching, error, refetch } = useQuery({
+    queryKey: ['advisory-requests', scope, page, debouncedSearch, statusFilter, categoryFilter, priorityFilter, currentUser?.id],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(page), limit: String(limit), ...scopeParams });
-      if (search) params.set('search', search);
+      if (debouncedSearch) params.set('search', debouncedSearch);
       if (statusFilter) params.set('status', statusFilter);
       if (categoryFilter) params.set('categoryId', categoryFilter);
       if (priorityFilter) params.set('priority', priorityFilter);
@@ -100,25 +123,44 @@ export function RequestTable({ scope, title, emptyMessage, showFilters, showBulk
   });
 
   const rows: LegalRequestListItem[] = data?.data ?? [];
+  const meta = data?.meta as { total: number; page: number; totalPages: number } | undefined;
+  const activeFilterCount = [statusFilter, categoryFilter, priorityFilter].filter(Boolean).length;
 
-  const toggleSelected = (id: string) => {
-    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const clearFilters = () => {
+    setStatusFilter(''); setCategoryFilter(''); setPriorityFilter('');
+    setSearch(''); setPage(1);
   };
 
-  const handleExport = async (format: 'pdf' | 'xlsx') => {
-    const params = new URLSearchParams({ format, ...scopeParams });
-    if (search) params.set('search', search);
-    if (statusFilter) params.set('status', statusFilter);
-    if (selected.length > 0) params.set('ids', selected.join(','));
-    const res = await fetch(`/api/advisory/requests/export?${params}`);
-    if (!res.ok) return;
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `legal-requests.${format === 'pdf' ? 'pdf' : 'xlsx'}`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const toggleSelected = (id: string) =>
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  const allOnPageSelected = rows.length > 0 && rows.every((r) => selected.includes(r.id));
+  const toggleSelectAll = () =>
+    setSelected((prev) =>
+      allOnPageSelected
+        ? prev.filter((id) => !rows.some((r) => r.id === id))
+        : [...new Set([...prev, ...rows.map((r) => r.id)])],
+    );
+
+  const handleExport = async (fmt: 'pdf' | 'xlsx') => {
+    setExporting(fmt);
+    try {
+      const params = new URLSearchParams({ format: fmt, ...scopeParams });
+      if (debouncedSearch) params.set('search', debouncedSearch);
+      if (statusFilter) params.set('status', statusFilter);
+      if (selected.length > 0) params.set('ids', selected.join(','));
+      const res = await fetch(`/api/advisory/requests/export?${params}`);
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `legal-requests.${fmt === 'pdf' ? 'pdf' : 'xlsx'}`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(null);
+    }
   };
 
   const handleBulkReassign = async (officerId: string) => {
@@ -142,12 +184,20 @@ export function RequestTable({ scope, title, emptyMessage, showFilters, showBulk
         ? [
             {
               id: 'select',
-              header: () => null,
+              header: () => (
+                <input
+                  type="checkbox"
+                  checked={allOnPageSelected}
+                  onChange={toggleSelectAll}
+                  aria-label="Select all rows on this page"
+                />
+              ),
               cell: (info: { row: { original: LegalRequestListItem } }) => (
                 <input
                   type="checkbox"
                   checked={selected.includes(info.row.original.id)}
                   onChange={() => toggleSelected(info.row.original.id)}
+                  aria-label={`Select ${info.row.original.requestNumber}`}
                 />
               ),
             } as ColumnDef<LegalRequestListItem>,
@@ -157,21 +207,39 @@ export function RequestTable({ scope, title, emptyMessage, showFilters, showBulk
         accessorKey: 'requestNumber',
         header: 'Request ID',
         cell: (info) => (
-          <Link href={`/advisory/${info.row.original.id}`} className="text-accent font-semibold hover:underline font-mono text-sm">
+          <Link href={`/advisory/${info.row.original.id}`} className="cm-ref">
             {info.getValue() as string}
           </Link>
         ),
       },
-      { accessorKey: 'subject', header: 'Subject' },
-      { accessorFn: (r) => r.category.name, id: 'category', header: 'Category' },
-      { accessorFn: (r) => r.requestingDepartment.name, id: 'department', header: 'Requesting Dept.' },
+      {
+        accessorKey: 'subject',
+        header: 'Subject',
+        cell: (info) => (
+          <div style={{ maxWidth: 280 }}>
+            <div className="cm-cell-strong">{info.getValue() as string}</div>
+            <div className="cm-cell-sub">{info.row.original.category.name}</div>
+          </div>
+        ),
+      },
+      {
+        accessorFn: (r) => r.requestingDepartment.name,
+        id: 'department',
+        header: 'Requesting Dept.',
+        cell: (info) => <span className="cm-muted-cell">{info.getValue() as string}</span>,
+      },
       {
         accessorFn: (r) => r.requester,
         id: 'requester',
         header: 'Requested By',
         cell: (info) => {
           const u = info.getValue() as UserRef;
-          return `${u.firstName} ${u.lastName}`;
+          return (
+            <span className="cm-owner">
+              <span className="cm-avatar">{u.firstName.charAt(0)}</span>
+              {u.firstName} {u.lastName}
+            </span>
+          );
         },
       },
       {
@@ -180,7 +248,14 @@ export function RequestTable({ scope, title, emptyMessage, showFilters, showBulk
         header: 'Assigned Officer',
         cell: (info) => {
           const u = info.getValue() as UserRef | null;
-          return u ? `${u.firstName} ${u.lastName}` : <span className="text-muted">Unassigned</span>;
+          return u ? (
+            <span className="cm-owner">
+              <span className="cm-avatar">{u.firstName.charAt(0)}</span>
+              {u.firstName} {u.lastName}
+            </span>
+          ) : (
+            <span style={{ color: 'var(--text-muted)' }}>Unassigned</span>
+          );
         },
       },
       {
@@ -203,119 +278,223 @@ export function RequestTable({ scope, title, emptyMessage, showFilters, showBulk
       },
       {
         accessorKey: 'createdAt',
-        header: 'Date Submitted',
-        cell: (info) => format(new Date(info.getValue() as string), 'MMM d, yyyy'),
+        header: 'Submitted',
+        cell: (info) => (
+          <span className="cm-muted-cell">{format(new Date(info.getValue() as string), 'MMM d, yyyy')}</span>
+        ),
       },
       {
         accessorKey: 'dueDate',
         header: 'Due Date',
         cell: (info) => {
           const v = info.getValue() as string | null;
-          return v ? format(new Date(v), 'MMM d, yyyy') : '—';
+          return <span className="cm-muted-cell">{v ? format(new Date(v), 'MMM d, yyyy') : '—'}</span>;
         },
       },
     ],
-    [showBulkActions, selected],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [showBulkActions, selected, allOnPageSelected, rows],
   );
 
-  const table = useReactTable({
-    data: rows,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-  });
+  const table = useReactTable({ data: rows, columns, getCoreRowModel: getCoreRowModel() });
 
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex justify-between items-center flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold mb-1">{title}</h1>
-        </div>
-        <div className="flex gap-3">
-          <button className="btn btn-secondary" onClick={() => handleExport('xlsx')}>
-            <FileSpreadsheet size={16} /> Excel
-          </button>
-          <button className="btn btn-secondary" onClick={() => handleExport('pdf')}>
-            <FileText size={16} /> PDF
-          </button>
-          {showNewButton && (
-            <Link href="/advisory/new" className="btn btn-primary">
-              <Plus size={16} /> New Request
-            </Link>
-          )}
+    <div className="enterprise-page">
+
+      {/* ── Header ───────────────────────────────────────────────────────── */}
+      <div className="enterprise-hero">
+        <div className="enterprise-hero-content">
+          <div style={{ minWidth: 0 }}>
+            <nav className="enterprise-kicker" aria-label="Breadcrumb">
+              <Link href="/dashboard" className="enterprise-id" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <Home size={11} /> Home
+              </Link>
+              <ChevronRight size={12} style={{ color: 'rgba(247,245,242,0.45)' }} />
+              <Link href="/advisory" className="enterprise-id" style={{ textDecoration: 'none' }}>Legal Advisory</Link>
+            </nav>
+            <h1 className="enterprise-title">{title}</h1>
+            {subtitle && <p className="enterprise-subtitle">{subtitle}</p>}
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              aria-label="Refresh requests"
+              title="Refresh"
+            >
+              <RefreshCw size={14} style={isFetching ? { animation: 'spin 0.8s linear infinite' } : undefined} />
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => handleExport('xlsx')} disabled={exporting !== null}>
+              <FileSpreadsheet size={14} /> {exporting === 'xlsx' ? 'Exporting…' : 'Excel'}
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => handleExport('pdf')} disabled={exporting !== null}>
+              <FileText size={14} /> {exporting === 'pdf' ? 'Exporting…' : 'PDF'}
+            </button>
+            {showNewButton && (
+              <Link href="/advisory/new" className="btn btn-primary btn-sm">
+                <Plus size={14} /> New Request
+              </Link>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="card">
-        <div className="filters-bar border-b border-border pb-5 mb-5">
-          <div className="relative flex-1 max-w-sm">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+      {/* ── Registry panel ───────────────────────────────────────────────── */}
+      <div className="enterprise-panel">
+
+        {/* Toolbar */}
+        <div className="cm-toolbar">
+          <div className="cm-search">
+            <Search />
             <input
-              type="text"
-              placeholder="Search requests..."
-              className="form-control pl-10"
+              type="search"
+              placeholder="Search by request number, subject or requester…"
               value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label="Search advisory requests"
             />
+            {search && (
+              <button className="cm-search-clear" onClick={() => setSearch('')} aria-label="Clear search">
+                <X size={14} />
+              </button>
+            )}
           </div>
-          {showFilters && (
-            <>
-              <select className="form-control" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}>
-                <option value="">All Statuses</option>
-                {['DRAFT','SUBMITTED','VALIDATED','ASSIGNED','DRAFTING','REVIEW','RETURNED','PENDING_APPROVAL','APPROVED','DISPATCHED','CLOSED','ARCHIVED','REJECTED','ESCALATED'].map((s) => (
-                  <option key={s} value={s}>{s.replace('_', ' ')}</option>
-                ))}
-              </select>
-              <select className="form-control" value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}>
-                <option value="">All Categories</option>
-                {categories?.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-              <select className="form-control" value={priorityFilter} onChange={(e) => { setPriorityFilter(e.target.value); setPage(1); }}>
-                <option value="">All Priorities</option>
-                {['LOW', 'MEDIUM', 'HIGH', 'URGENT', 'CRITICAL'].map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-            </>
-          )}
+
+          <div className="cm-toolbar-group">
+            {meta && (
+              <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
+                <strong style={{ color: 'var(--text-primary)' }}>{meta.total.toLocaleString()}</strong> request{meta.total === 1 ? '' : 's'}
+              </span>
+            )}
+            {showFilters && (
+              <button
+                className={`btn btn-sm ${showFilterDrawer || activeFilterCount ? 'btn-secondary' : 'btn-ghost'}`}
+                onClick={() => setShowFilterDrawer((v) => !v)}
+                aria-expanded={showFilterDrawer}
+              >
+                <Filter size={14} /> Filters
+                {activeFilterCount > 0 && <span className="cm-count">{activeFilterCount}</span>}
+              </button>
+            )}
+          </div>
         </div>
 
-        {showBulkActions && selected.length > 0 && (
-          <div className="flex items-center gap-3 mb-4 p-3 rounded-md" style={{ background: 'var(--bg-input)' }}>
-            <span className="text-sm">{selected.length} selected</span>
-            <select
-              className="form-control btn-sm"
-              disabled={reassigning}
-              onChange={(e) => {
-                if (e.target.value) handleBulkReassign(e.target.value);
-              }}
-              defaultValue=""
-            >
-              <option value="" disabled>
-                Bulk reassign to...
-              </option>
-              {officers?.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.firstName} {o.lastName}
-                </option>
-              ))}
-            </select>
+        {/* Filter drawer */}
+        {showFilters && showFilterDrawer && (
+          <div className="cm-filters">
+            <div className="cm-filter-field">
+              <label htmlFor="adv-status">Status</label>
+              <select
+                id="adv-status" className="form-control"
+                value={statusFilter}
+                onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+              >
+                <option value="">All statuses</option>
+                {ALL_STATUSES.map((s) => <option key={s} value={s}>{prettyEnum(s)}</option>)}
+              </select>
+            </div>
+            <div className="cm-filter-field">
+              <label htmlFor="adv-category">Category</label>
+              <select
+                id="adv-category" className="form-control"
+                value={categoryFilter}
+                onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
+              >
+                <option value="">All categories</option>
+                {categories?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div className="cm-filter-field">
+              <label htmlFor="adv-priority">Priority</label>
+              <select
+                id="adv-priority" className="form-control"
+                value={priorityFilter}
+                onChange={(e) => { setPriorityFilter(e.target.value); setPage(1); }}
+              >
+                <option value="">All priorities</option>
+                {PRIORITIES.map((p) => <option key={p} value={p}>{prettyEnum(p)}</option>)}
+              </select>
+            </div>
+            {(activeFilterCount > 0 || search) && (
+              <div className="cm-filters-footer">
+                <button className="btn btn-ghost btn-sm" onClick={clearFilters}>
+                  <X size={14} /> Clear all filters
+                </button>
+              </div>
+            )}
           </div>
         )}
 
+        {/* Bulk action bar */}
+        {showBulkActions && selected.length > 0 && (
+          <div className="cm-toolbar" style={{ background: 'var(--accent-glow)' }}>
+            <div className="cm-toolbar-group">
+              <Users size={15} style={{ color: 'var(--accent-hover)' }} />
+              <span style={{ fontSize: 13, fontWeight: 600 }}>
+                {selected.length} request{selected.length === 1 ? '' : 's'} selected
+              </span>
+            </div>
+            <div className="cm-toolbar-group">
+              <select
+                className="form-control"
+                style={{ width: 'auto', minWidth: 200 }}
+                disabled={reassigning}
+                onChange={(e) => { if (e.target.value) handleBulkReassign(e.target.value); }}
+                defaultValue=""
+                aria-label="Bulk reassign to officer"
+              >
+                <option value="" disabled>{reassigning ? 'Reassigning…' : 'Bulk reassign to…'}</option>
+                {officers?.map((o) => (
+                  <option key={o.id} value={o.id}>{o.firstName} {o.lastName}</option>
+                ))}
+              </select>
+              <button className="btn btn-ghost btn-sm" onClick={() => setSelected([])}>
+                <X size={14} /> Clear selection
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Body */}
         {isLoading ? (
-          <div className="text-center py-10">
-            <div className="spinner-sm border-accent" />
+          <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="skeleton" style={{ height: 46, borderRadius: 8 }} />
+            ))}
           </div>
         ) : error ? (
-          <div className="text-danger py-10 text-center">Error loading requests</div>
+          <div className="alert alert-danger" style={{ margin: 18 }}>
+            Could not load advisory requests.
+            <button className="btn btn-sm btn-ghost" style={{ marginLeft: 10 }} onClick={() => refetch()}>
+              <RefreshCw size={14} /> Retry
+            </button>
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="empty-state" style={{ padding: '56px 24px', textAlign: 'center' }}>
+            <div style={{
+              width: 66, height: 66, margin: '0 auto 16px', display: 'flex',
+              alignItems: 'center', justifyContent: 'center', borderRadius: 20,
+              background: 'var(--bg-input)', border: '1px solid var(--border)',
+            }}>
+              <Inbox size={30} style={{ color: 'var(--text-muted)' }} />
+            </div>
+            <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>
+              {emptyMessage ?? 'No legal advisory requests found'}
+            </h3>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', maxWidth: 380, margin: '0 auto 18px' }}>
+              {activeFilterCount > 0 || debouncedSearch
+                ? 'No requests match the current search and filters.'
+                : 'Nothing to show here yet.'}
+            </p>
+            {(activeFilterCount > 0 || debouncedSearch) && (
+              <button className="btn btn-ghost btn-sm" onClick={clearFilters}>Clear filters</button>
+            )}
+          </div>
         ) : (
-          <div className="table-wrapper">
-            <table>
+          <div className="cm-table-wrap">
+            <table className="cm-table">
               <thead>
                 {table.getHeaderGroups().map((headerGroup) => (
                   <tr key={headerGroup.id}>
@@ -333,36 +512,35 @@ export function RequestTable({ scope, title, emptyMessage, showFilters, showBulk
                     ))}
                   </tr>
                 ))}
-                {rows.length === 0 && (
-                  <tr>
-                    <td colSpan={columns.length} className="text-center py-10 text-muted">
-                      <div className="empty-state">
-                        <FileText size={32} className="mx-auto mb-3 opacity-30" />
-                        <p>{emptyMessage ?? 'No legal advisory requests found'}</p>
-                      </div>
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
         )}
 
-        {data?.meta && data.meta.totalPages > 1 && (
-          <div className="flex justify-between items-center mt-5 pt-5 border-t border-border">
-            <div className="text-sm text-muted">
-              Page {data.meta.page} of {data.meta.totalPages} ({data.meta.total} total)
-            </div>
-            <div className="flex gap-2">
-              <button className="btn btn-ghost btn-sm" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
-                <ChevronLeft size={16} />
+        {/* Pagination */}
+        {meta && meta.totalPages > 1 && (
+          <div className="cm-pagination">
+            <span>
+              Page <strong style={{ color: 'var(--text-primary)' }}>{meta.page}</strong> of{' '}
+              <strong style={{ color: 'var(--text-primary)' }}>{meta.totalPages}</strong>
+              {' · '}{meta.total.toLocaleString()} total
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                className="cm-page-btn"
+                disabled={page === 1}
+                onClick={() => setPage((p) => p - 1)}
+                aria-label="Previous page"
+              >
+                <ChevronLeft size={15} />
               </button>
               <button
-                className="btn btn-ghost btn-sm"
-                disabled={page === data.meta.totalPages}
+                className="cm-page-btn"
+                disabled={page >= meta.totalPages}
                 onClick={() => setPage((p) => p + 1)}
+                aria-label="Next page"
               >
-                <ChevronRight size={16} />
+                <ChevronRight size={15} />
               </button>
             </div>
           </div>

@@ -51,7 +51,8 @@ export const MessageService = {
       where: { recipientId: userId, status: { notIn: ['DELETED', 'ARCHIVED'] } },
       include: {
         thread: true,
-        sender: { select: { id: true, firstName: true, lastName: true, role: { select: { name: true } } } }
+        sender: { select: { id: true, firstName: true, lastName: true, email: true, role: { select: { name: true } } } },
+        recipient: { select: { id: true, firstName: true, lastName: true, email: true, role: { select: { name: true } } } }
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -63,7 +64,8 @@ export const MessageService = {
       where: { senderId: userId, status: { notIn: ['DELETED', 'ARCHIVED'] } },
       include: {
         thread: true,
-        recipient: { select: { id: true, firstName: true, lastName: true, role: { select: { name: true } } } }
+        sender: { select: { id: true, firstName: true, lastName: true, email: true, role: { select: { name: true } } } },
+        recipient: { select: { id: true, firstName: true, lastName: true, email: true, role: { select: { name: true } } } }
       },
       orderBy: { createdAt: 'desc' }
     });

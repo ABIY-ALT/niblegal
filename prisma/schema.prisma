@@ -32,13 +32,17 @@ model User {
   contractsRequested Contract[] @relation("ContractRequester")
   contractsAssigned  Contract[] @relation("ContractAssignee")
 
-  contractApprovalsGiven     ContractApproval[]   @relation("ContractApprovalApprover")
-  contractApprovalsDelegated ContractApproval[]   @relation("ContractApprovalDelegatedTo")
+  contractApprovalsGiven        ContractApproval[]   @relation("ContractApprovalApprover")
+  contractApprovalsDelegated    ContractApproval[]   @relation("ContractApprovalDelegatedTo")
   contractAssignmentsAsOfficer  ContractAssignment[] @relation("ContractAssignmentOfficer")
   contractAssignmentsAsPrevious ContractAssignment[] @relation("ContractAssignmentPreviousOfficer")
   contractAssignmentsMade       ContractAssignment[] @relation("ContractAssignmentAssignedBy")
   contractWorkflowActions       ContractWorkflow[]   @relation("ContractWorkflowActor")
   contractHistoryActions        ContractHistory[]    @relation("ContractHistoryActor")
+
+  litigationCasesAssigned  LitigationCase[]    @relation("LitigationAssignedOfficer")
+  litigationCasesCreated   LitigationCase[]    @relation("LitigationCreatedBy")
+  litigationHistoryActions LitigationHistory[] @relation("LitigationHistoryActor")
 
   legalRequestsRequested LegalRequest[] @relation("LegalRequestRequester")
   legalRequestsAssigned  LegalRequest[] @relation("LegalRequestAssignee")
@@ -70,17 +74,17 @@ model User {
   auditLogs AuditLog[]
 
   // Notification relations
-  notificationsReceived   Notification[]          @relation("NotificationRecipient")
-  notificationsSent       Notification[]          @relation("NotificationSender")
-  messagesSent            Message[]               @relation("MessageSender")
-  messagesReceived        Message[]               @relation("MessageRecipient")
-  announcements           Announcement[]          @relation("AnnouncementAuthor")
-  notificationPreference  NotificationPreference?
-  
+  notificationsReceived  Notification[]          @relation("NotificationRecipient")
+  notificationsSent      Notification[]          @relation("NotificationSender")
+  messagesSent           Message[]               @relation("MessageSender")
+  messagesReceived       Message[]               @relation("MessageRecipient")
+  announcements          Announcement[]          @relation("AnnouncementAuthor")
+  notificationPreference NotificationPreference?
+
   // Workflow relations
-  workflowsCreated        WorkflowDefinition[]    @relation("WorkflowCreatedBy")
-  workflowTasksAssigned   WorkflowTask[]          @relation("TaskAssignedTo")
-  workflowHistoryActions  WorkflowHistory[]       @relation("HistoryActor")
+  workflowsCreated       WorkflowDefinition[] @relation("WorkflowCreatedBy")
+  workflowTasksAssigned  WorkflowTask[]       @relation("TaskAssignedTo")
+  workflowHistoryActions WorkflowHistory[]    @relation("HistoryActor")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -114,6 +118,7 @@ model Department {
   contracts          Contract[]          @relation("ContractDepartment")
   legalRequests      LegalRequest[]
   knowledgeDocuments KnowledgeDocument[]
+  litigationCases    LitigationCase[]    @relation("LitigationDepartment")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -152,7 +157,7 @@ model Contract {
   id             String           @id @default(uuid())
   contractNumber String           @unique // e.g. NIB-CMS-2026-00042
   title          String
-  category       ContractCategory
+  category       String
   status         ContractStatus   @default(DRAFT)
   counterparty   String
   description    String?
@@ -309,6 +314,138 @@ model ContractVersion {
 }
 
 // ---------------------------------------------------------
+// Litigation Management
+// ---------------------------------------------------------
+
+enum LitigationStatus {
+  ACTIVE
+  PENDING
+  ON_HOLD
+  SETTLED
+  WON
+  LOST
+  DISMISSED
+  CLOSED
+}
+
+enum LitigationCategory {
+  LABOR_DISPUTE
+  DEBT_RECOVERY
+  BREACH_OF_CONTRACT
+  PROPERTY_CLAIM
+  REGULATORY
+  CUSTOMER_DISPUTE
+  OTHER
+}
+
+enum LitigationRisk {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum LitigationRole {
+  PLAINTIFF
+  DEFENDANT
+}
+
+enum HearingType {
+  HEARING
+  VERDICT
+  FILING
+  MEDIATION
+  OTHER
+}
+
+enum HearingStatus {
+  SCHEDULED
+  COMPLETED
+  POSTPONED
+  CANCELLED
+}
+
+model LitigationCase {
+  id            String             @id @default(uuid())
+  caseNumber    String             @unique // e.g. LIT-2026-000042
+  title         String // e.g. "Nib Bank vs. Global Tech"
+  category      String
+  status        LitigationStatus   @default(ACTIVE)
+  riskLevel     LitigationRisk     @default(MEDIUM)
+  bankRole      LitigationRole     @default(DEFENDANT)
+  opposingParty String
+  court         String?
+  description   String?
+
+  exposureAmount Decimal?
+  currency       String?  @default("ETB")
+
+  filedDate  DateTime?
+  closedDate DateTime?
+  outcome    String?
+  tags       String[]
+
+  requestingDepartmentId String?
+  requestingDepartment   Department? @relation("LitigationDepartment", fields: [requestingDepartmentId], references: [id])
+
+  assignedOfficerId String?
+  assignedOfficer   User?   @relation("LitigationAssignedOfficer", fields: [assignedOfficerId], references: [id])
+
+  createdById String
+  createdBy   User   @relation("LitigationCreatedBy", fields: [createdById], references: [id])
+
+  hearings LitigationHearing[]
+  history  LitigationHistory[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([category])
+  @@index([caseNumber])
+  @@map("litigation_cases")
+}
+
+model LitigationHearing {
+  id          String        @id @default(uuid())
+  type        HearingType   @default(HEARING)
+  status      HearingStatus @default(SCHEDULED)
+  scheduledAt DateTime
+  location    String?
+  notes       String?
+  outcome     String?
+
+  caseId String
+  case   LitigationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([caseId])
+  @@index([scheduledAt])
+  @@map("litigation_hearings")
+}
+
+model LitigationHistory {
+  id          String  @id @default(uuid())
+  action      String
+  fromValue   String?
+  toValue     String?
+  description String
+
+  caseId String
+  case   LitigationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  actorId String?
+  actor   User?   @relation("LitigationHistoryActor", fields: [actorId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([caseId])
+  @@map("litigation_history")
+}
+
+// ---------------------------------------------------------
 // Legal Advisory Help Desk (LAHD)
 // ---------------------------------------------------------
 
@@ -411,7 +548,7 @@ model LegalRequest {
   requestNumber   String               @unique // e.g. LEG-2026-000001
   subject         String
   description     String
-  requestType     RequestType          @default(LEGAL_OPINION)
+  requestType     String          @default("LEGAL_OPINION")
   status          LegalRequestStatus   @default(DRAFT)
   priority        Priority             @default(MEDIUM)
   confidentiality ConfidentialityLevel @default(PUBLIC_INTERNAL)
@@ -941,33 +1078,33 @@ model WorkflowDefinition {
   description String?
   module      WorkflowModule
   status      WorkflowStatus @default(DRAFT)
-  
-  versions    WorkflowVersion[]
-  instances   WorkflowInstance[]
-  
+
+  versions  WorkflowVersion[]
+  instances WorkflowInstance[]
+
   createdById String
-  createdBy   User           @relation("WorkflowCreatedBy", fields: [createdById], references: [id])
-  
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  createdBy   User   @relation("WorkflowCreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("workflow_definitions")
 }
 
 model WorkflowVersion {
-  id             String             @id @default(uuid())
-  versionNumber  Int
-  flowData       Json               // Stores React Flow nodes and edges
-  configData     Json               // Stores SLA, Notification rules, Escalation rules
-  isPublished    Boolean            @default(false)
-  
-  definitionId   String
-  definition     WorkflowDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
-  
-  instances      WorkflowInstance[]
-  
-  createdAt      DateTime           @default(now())
-  
+  id            String  @id @default(uuid())
+  versionNumber Int
+  flowData      Json // Stores React Flow nodes and edges
+  configData    Json // Stores SLA, Notification rules, Escalation rules
+  isPublished   Boolean @default(false)
+
+  definitionId String
+  definition   WorkflowDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  instances WorkflowInstance[]
+
+  createdAt DateTime @default(now())
+
   @@unique([definitionId, versionNumber])
   @@map("workflow_versions")
 }
@@ -981,23 +1118,23 @@ enum InstanceStatus {
 }
 
 model WorkflowInstance {
-  id             String             @id @default(uuid())
-  status         InstanceStatus     @default(RUNNING)
-  currentStepId  String?            // ID from React Flow node
-  contextData    Json?              // Document ID, Requester ID, metadata
-  
-  definitionId   String
-  definition     WorkflowDefinition @relation(fields: [definitionId], references: [id])
-  
-  versionId      String
-  version        WorkflowVersion    @relation(fields: [versionId], references: [id])
-  
-  tasks          WorkflowTask[]
-  history        WorkflowHistory[]
-  
-  startedAt      DateTime           @default(now())
-  completedAt    DateTime?
-  
+  id            String         @id @default(uuid())
+  status        InstanceStatus @default(RUNNING)
+  currentStepId String? // ID from React Flow node
+  contextData   Json? // Document ID, Requester ID, metadata
+
+  definitionId String
+  definition   WorkflowDefinition @relation(fields: [definitionId], references: [id])
+
+  versionId String
+  version   WorkflowVersion @relation(fields: [versionId], references: [id])
+
+  tasks   WorkflowTask[]
+  history WorkflowHistory[]
+
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+
   @@map("workflow_instances")
 }
 
@@ -1011,41 +1148,41 @@ enum TaskStatus {
 }
 
 model WorkflowTask {
-  id             String             @id @default(uuid())
-  stepId         String             // Link back to React Flow node ID
-  stepName       String
-  status         TaskStatus         @default(PENDING)
-  
-  assignedToId   String?
-  assignedTo     User?              @relation("TaskAssignedTo", fields: [assignedToId], references: [id])
-  
-  assignedRoleId String?            // Or assign by Role
-  
-  instanceId     String
-  instance       WorkflowInstance   @relation(fields: [instanceId], references: [id], onDelete: Cascade)
-  
-  dueDate        DateTime?
-  completedAt    DateTime?
-  
-  createdAt      DateTime           @default(now())
-  
+  id       String     @id @default(uuid())
+  stepId   String // Link back to React Flow node ID
+  stepName String
+  status   TaskStatus @default(PENDING)
+
+  assignedToId String?
+  assignedTo   User?   @relation("TaskAssignedTo", fields: [assignedToId], references: [id])
+
+  assignedRoleId String? // Or assign by Role
+
+  instanceId String
+  instance   WorkflowInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  dueDate     DateTime?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+
   @@map("workflow_tasks")
 }
 
 model WorkflowHistory {
-  id             String             @id @default(uuid())
-  action         String
-  details        String?
-  nodeId         String?            // Which node this relates to
-  
-  instanceId     String
-  instance       WorkflowInstance   @relation(fields: [instanceId], references: [id], onDelete: Cascade)
-  
-  actorId        String?
-  actor          User?              @relation("HistoryActor", fields: [actorId], references: [id])
-  
-  createdAt      DateTime           @default(now())
-  
+  id      String  @id @default(uuid())
+  action  String
+  details String?
+  nodeId  String? // Which node this relates to
+
+  instanceId String
+  instance   WorkflowInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  actorId String?
+  actor   User?   @relation("HistoryActor", fields: [actorId], references: [id])
+
+  createdAt DateTime @default(now())
+
   @@map("workflow_history")
 }
 
@@ -1082,31 +1219,31 @@ enum NotificationStatus {
 }
 
 model Notification {
-  id          String               @id @default(uuid())
-  title       String
-  body        String
-  type        NotificationType     @default(INFO)
-  priority    NotificationPriority @default(MEDIUM)
-  status      NotificationStatus   @default(UNREAD)
+  id       String               @id @default(uuid())
+  title    String
+  body     String
+  type     NotificationType     @default(INFO)
+  priority NotificationPriority @default(MEDIUM)
+  status   NotificationStatus   @default(UNREAD)
 
-  module      String?
-  relatedId   String?
-  actionUrl   String?
+  module    String?
+  relatedId String?
+  actionUrl String?
 
-  isEmailSent Boolean             @default(false)
-  isPinned    Boolean             @default(false)
-  isStarred   Boolean             @default(false)
+  isEmailSent Boolean @default(false)
+  isPinned    Boolean @default(false)
+  isStarred   Boolean @default(false)
 
   recipientId String
-  recipient   User                 @relation("NotificationRecipient", fields: [recipientId], references: [id])
+  recipient   User   @relation("NotificationRecipient", fields: [recipientId], references: [id])
 
-  senderId    String?
-  sender      User?                @relation("NotificationSender",    fields: [senderId],    references: [id])
+  senderId String?
+  sender   User?   @relation("NotificationSender", fields: [senderId], references: [id])
 
-  readAt      DateTime?
-  expiresAt   DateTime?
+  readAt    DateTime?
+  expiresAt DateTime?
 
-  createdAt   DateTime             @default(now())
+  createdAt DateTime @default(now())
 
   @@index([recipientId, status])
   @@index([type])
@@ -1122,53 +1259,53 @@ enum MessageStatus {
 }
 
 model MessageThread {
-  id          String    @id @default(uuid())
-  subject     String
-  isArchived  Boolean   @default(false)
-  
-  messages    Message[]
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id         String  @id @default(uuid())
+  subject    String
+  isArchived Boolean @default(false)
+
+  messages Message[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Message {
-  id          String        @id @default(uuid())
-  body        String
-  status      MessageStatus @default(SENT)
-  isRead      Boolean       @default(false)
-  readAt      DateTime?
+  id     String        @id @default(uuid())
+  body   String
+  status MessageStatus @default(SENT)
+  isRead Boolean       @default(false)
+  readAt DateTime?
 
-  threadId    String
-  thread      MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  threadId String
+  thread   MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
 
-  senderId    String
-  sender      User          @relation("MessageSender",    fields: [senderId],    references: [id])
+  senderId String
+  sender   User   @relation("MessageSender", fields: [senderId], references: [id])
 
   recipientId String
-  recipient   User          @relation("MessageRecipient", fields: [recipientId], references: [id])
+  recipient   User   @relation("MessageRecipient", fields: [recipientId], references: [id])
 
-  parentId    String?
-  parent      Message?      @relation("MessageReplies", fields: [parentId], references: [id])
-  replies     Message[]     @relation("MessageReplies")
+  parentId String?
+  parent   Message?  @relation("MessageReplies", fields: [parentId], references: [id])
+  replies  Message[] @relation("MessageReplies")
 
   attachments MessageAttachment[]
 
-  createdAt   DateTime      @default(now())
+  createdAt DateTime @default(now())
 
   @@index([threadId])
   @@index([recipientId, isRead])
 }
 
 model MessageAttachment {
-  id        String   @id @default(uuid())
-  fileUrl   String
-  fileName  String
-  fileSize  Int
-  fileType  String
+  id       String @id @default(uuid())
+  fileUrl  String
+  fileName String
+  fileSize Int
+  fileType String
 
   messageId String
-  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 }
@@ -1188,59 +1325,59 @@ enum AnnouncementPriority {
 }
 
 model Announcement {
-  id           String               @id @default(uuid())
-  title        String
-  body         String
-  status       AnnouncementStatus   @default(DRAFT)
-  priority     AnnouncementPriority @default(MEDIUM)
-  
-  targetRoles  String[]
-  
-  publishAt    DateTime?
-  expiresAt    DateTime?
+  id       String               @id @default(uuid())
+  title    String
+  body     String
+  status   AnnouncementStatus   @default(DRAFT)
+  priority AnnouncementPriority @default(MEDIUM)
 
-  authorId     String
-  author       User                 @relation("AnnouncementAuthor", fields: [authorId], references: [id])
+  targetRoles String[]
 
-  createdAt    DateTime             @default(now())
-  updatedAt    DateTime             @updatedAt
+  publishAt DateTime?
+  expiresAt DateTime?
+
+  authorId String
+  author   User   @relation("AnnouncementAuthor", fields: [authorId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status])
 }
 
 model NotificationPreference {
-  id              String  @id @default(uuid())
+  id String @id @default(uuid())
 
-  userId          String  @unique
-  user            User    @relation(fields: [userId], references: [id])
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
 
-  inAppContracts  Boolean @default(true)
-  inAppAdvisory   Boolean @default(true)
-  inAppApprovals  Boolean @default(true)
-  inAppSLA        Boolean @default(true)
-  inAppAnnounce   Boolean @default(true)
+  inAppContracts Boolean @default(true)
+  inAppAdvisory  Boolean @default(true)
+  inAppApprovals Boolean @default(true)
+  inAppSLA       Boolean @default(true)
+  inAppAnnounce  Boolean @default(true)
 
-  emailContracts  Boolean @default(true)
-  emailAdvisory   Boolean @default(true)
-  emailApprovals  Boolean @default(true)
-  emailSLA        Boolean @default(true)
-  emailAnnounce   Boolean @default(false)
+  emailContracts Boolean @default(true)
+  emailAdvisory  Boolean @default(true)
+  emailApprovals Boolean @default(true)
+  emailSLA       Boolean @default(true)
+  emailAnnounce  Boolean @default(false)
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model EmailLog {
-  id          String   @id @default(uuid())
-  to          String
-  subject     String
-  template    String
-  status      String
-  error       String?
-  
-  userId      String?
-  
-  sentAt      DateTime @default(now())
+  id       String  @id @default(uuid())
+  to       String
+  subject  String
+  template String
+  status   String
+  error    String?
+
+  userId String?
+
+  sentAt DateTime @default(now())
 
   @@index([status])
   @@index([sentAt])
@@ -1251,61 +1388,63 @@ model EmailLog {
 // ---------------------------------------------------------
 
 model SystemSettings {
-  id               String   @id @default("default") // Singleton pattern
-  bankName         String   @default("Nib International Bank S.C.")
-  departmentName   String   @default("Legal Services Department")
-  systemName       String   @default("Legal Management System")
-  defaultLanguage  String   @default("en")
-  timeZone         String   @default("Africa/Addis_Ababa")
-  dateFormat       String   @default("DD/MM/YYYY")
-  currency         String   @default("ETB")
-  paginationSize   Int      @default(20)
-  theme            String   @default("system")
-  
-  updatedAt        DateTime @updatedAt
-  
+  id              String @id @default("default") // Singleton pattern
+  bankName        String @default("Nib International Bank S.C.")
+  departmentName  String @default("Legal Services Department")
+  systemName      String @default("Legal Management System")
+  defaultLanguage String @default("en")
+  timeZone        String @default("Africa/Addis_Ababa")
+  dateFormat      String @default("DD/MM/YYYY")
+  currency        String @default("ETB")
+  paginationSize  Int    @default(20)
+  theme           String @default("system")
+
+  lookupConfig    Json?
+
+  updatedAt DateTime @updatedAt
+
   @@map("system_settings")
 }
 
 model SecuritySettings {
-  id                   String   @id @default("default") // Singleton
-  jwtExpiration        Int      @default(3600) // seconds
-  sessionTimeout       Int      @default(1800) // seconds
-  maxLoginAttempts     Int      @default(3)
-  accountLockDuration  Int      @default(900) // seconds
-  passwordExpiryDays   Int      @default(90)
-  requireMfa           Boolean  @default(false)
-  
-  updatedAt            DateTime @updatedAt
+  id                  String  @id @default("default") // Singleton
+  jwtExpiration       Int     @default(3600) // seconds
+  sessionTimeout      Int     @default(1800) // seconds
+  maxLoginAttempts    Int     @default(3)
+  accountLockDuration Int     @default(900) // seconds
+  passwordExpiryDays  Int     @default(90)
+  requireMfa          Boolean @default(false)
+
+  updatedAt DateTime @updatedAt
 
   @@map("security_settings")
 }
 
 model SmtpSettings {
-  id             String   @id @default("default") // Singleton
-  host           String   @default("smtp.gmail.com")
-  port           Int      @default(587)
-  secure         Boolean  @default(false)
-  username       String?
-  password       String?
-  senderEmail    String   @default("noreply@nibbank.et")
-  senderName     String   @default("NIB Legal System")
-  
-  updatedAt      DateTime @updatedAt
+  id          String  @id @default("default") // Singleton
+  host        String  @default("smtp.gmail.com")
+  port        Int     @default(587)
+  secure      Boolean @default(false)
+  username    String?
+  password    String?
+  senderEmail String  @default("noreply@nibbank.et")
+  senderName  String  @default("NIB Legal System")
+
+  updatedAt DateTime @updatedAt
 
   @@map("smtp_settings")
 }
 
 model NumberingSettings {
-  id              String   @id @default("default") // Singleton
-  contractPrefix  String   @default("CON")
-  requestPrefix   String   @default("LEG")
-  docPrefix       String   @default("DOC")
-  empPrefix       String   @default("EMP")
-  useYear         Boolean  @default(true)
-  sequenceLength  Int      @default(6)
-  
-  updatedAt       DateTime @updatedAt
+  id             String  @id @default("default") // Singleton
+  contractPrefix String  @default("CON")
+  requestPrefix  String  @default("LEG")
+  docPrefix      String  @default("DOC")
+  empPrefix      String  @default("EMP")
+  useYear        Boolean @default(true)
+  sequenceLength Int     @default(6)
+
+  updatedAt DateTime @updatedAt
 
   @@map("numbering_settings")
 }
@@ -1315,71 +1454,71 @@ model Holiday {
   name        String
   date        DateTime
   isRecurring Boolean  @default(false) // If true, ignore year
-  
-  createdAt   DateTime @default(now())
-  
+
+  createdAt DateTime @default(now())
+
   @@map("holidays")
 }
 
 model ApiKey {
-  id          String   @id @default(uuid())
-  name        String
-  key         String   @unique
-  scopes      String[] // e.g., ["read:contracts", "write:contracts"]
-  expiresAt   DateTime?
-  lastUsedAt  DateTime?
-  isActive    Boolean  @default(true)
-  
-  createdAt   DateTime @default(now())
-  
+  id         String    @id @default(uuid())
+  name       String
+  key        String    @unique
+  scopes     String[] // e.g., ["read:contracts", "write:contracts"]
+  expiresAt  DateTime?
+  lastUsedAt DateTime?
+  isActive   Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+
   @@map("api_keys")
 }
 
 model Integration {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  type        String   // e.g., "LDAP", "ERP", "HRMS"
-  config      Json
-  isActive    Boolean  @default(false)
-  
-  updatedAt   DateTime @updatedAt
-  
+  id       String  @id @default(uuid())
+  name     String  @unique
+  type     String // e.g., "LDAP", "ERP", "HRMS"
+  config   Json
+  isActive Boolean @default(false)
+
+  updatedAt DateTime @updatedAt
+
   @@map("integrations")
 }
 
 model FeatureFlag {
-  id          String   @id @default(uuid())
-  name        String   @unique // e.g., "enable_ai_module"
-  isEnabled   Boolean  @default(false)
+  id          String  @id @default(uuid())
+  name        String  @unique // e.g., "enable_ai_module"
+  isEnabled   Boolean @default(false)
   description String?
-  
-  updatedAt   DateTime @updatedAt
-  
+
+  updatedAt DateTime @updatedAt
+
   @@map("feature_flags")
 }
 
 model BackupHistory {
-  id          String   @id @default(uuid())
+  id          String  @id @default(uuid())
   fileName    String
   fileSize    Int
-  status      String   // SUCCESS, FAILED
-  type        String   // MANUAL, AUTOMATIC
+  status      String // SUCCESS, FAILED
+  type        String // MANUAL, AUTOMATIC
   triggeredBy String?
-  
-  createdAt   DateTime @default(now())
-  
+
+  createdAt DateTime @default(now())
+
   @@map("backup_history")
 }
 
 model ApplicationLog {
-  id          String   @id @default(uuid())
-  level       String   // INFO, WARN, ERROR
-  source      String   // SYSTEM, AUTH, DB
-  message     String
-  meta        Json?
-  
-  createdAt   DateTime @default(now())
-  
+  id      String @id @default(uuid())
+  level   String // INFO, WARN, ERROR
+  source  String // SYSTEM, AUTH, DB
+  message String
+  meta    Json?
+
+  createdAt DateTime @default(now())
+
   @@index([level])
   @@index([createdAt])
   @@map("application_logs")

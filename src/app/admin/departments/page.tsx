@@ -154,7 +154,7 @@ export default function DepartmentsPage() {
               <div>
                 <h3 className="text-xs font-bold uppercase tracking-wider text-muted mb-3 flex items-center gap-2"><Briefcase size={12}/> Leadership</h3>
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center font-bold text-accent-hover shrink-0">
                     {selectedDept.head.split(' ').map(n=>n[0]).join('')}
                   </div>
                   <div>

@@ -10,7 +10,7 @@ import type { LegalRequestDetail, UserRef } from '@/types/advisory';
 
 export default function AssignmentPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <RoleGuard roles={['admin_assistant', 'manager']}>
+    <RoleGuard roles={['admin_assistant', 'manager']} permission="advisory.assign">
       <AssignmentPageContent params={params} />
     </RoleGuard>
   );

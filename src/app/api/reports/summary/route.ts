@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/session';
+import { hasAccess } from '@/lib/access';
 
 /**
  * Cross-module reporting aggregation (BR-CMS-09, BR-LAHD-04/06, §3.4). Replaces
@@ -9,7 +10,7 @@ import { getCurrentUser } from '@/lib/session';
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  if (!['manager', 'legal_officer', 'admin_assistant'].includes(user.role)) {
+  if (!hasAccess(user, { permission: 'reports.view', roles: ['manager', 'legal_officer', 'admin_assistant'] })) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 

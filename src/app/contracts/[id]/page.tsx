@@ -10,10 +10,11 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { statusLabel, statusBadgeClass } from '@/lib/contractStatus';
 
 type Officer = { id: string; firstName: string; lastName: string; role: { name: string } };
 
-const STATUS_LABEL = (s: string) => s.replace(/_/g, ' ');
+const STATUS_LABEL = statusLabel;
 
 export default function ContractDetailPage() {
   const params = useParams();
@@ -87,7 +88,7 @@ export default function ContractDetailPage() {
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-2">
             <span className="font-mono text-sm text-[var(--gold)]">{contract.contractNumber}</span>
-            <span className={`badge status-${status.toLowerCase().replace(/_/g, '-')}`}>{STATUS_LABEL(status)}</span>
+            <span className={statusBadgeClass(status)}>{STATUS_LABEL(status)}</span>
             {contract.slaBreached && <span className="badge bg-[var(--danger)] text-white text-xs">SLA breached</span>}
           </div>
           <h2 className="text-xl font-bold m-0">{contract.title}</h2>

@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/session';
+import { hasAccess } from '@/lib/access';
 import type { Prisma } from '@prisma/client';
 
 /** Consolidated audit trail across CMS/LAHD/KNOWLEDGE/SYSTEM (§3.4, BR-CMS-10). */
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  if (!['manager', 'legal_officer', 'admin_assistant'].includes(user.role)) {
+  if (!hasAccess(user, { permission: 'reports.view', roles: ['manager', 'legal_officer', 'admin_assistant'] })) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 

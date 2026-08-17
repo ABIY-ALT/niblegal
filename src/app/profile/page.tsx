@@ -97,7 +97,7 @@ export default function ProfilePage() {
 
       {/* Tab Content */}
       {activeTab === 'info' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+        <div className="grid-2" style={{ gap: 20 }}>
           <div className="card" style={{ gridColumn: '1 / -1' }}>
             <div className="card-header"><span className="card-title">Personal Information</span></div>
             <div className="form-row cols-2">

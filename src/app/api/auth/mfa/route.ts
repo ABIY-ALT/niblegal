@@ -62,7 +62,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'User not found.' }, { status: 404 });
     }
 
-    const mfaSecret = (user as Record<string, unknown>).mfaSecret as string | undefined;
+    const mfaSecret = (user as unknown as Record<string, unknown>).mfaSecret as string | undefined;
     if (!mfaSecret) {
       return NextResponse.json({ error: 'MFA not configured for this account.' }, { status: 400 });
     }

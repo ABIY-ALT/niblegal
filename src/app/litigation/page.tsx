@@ -2,204 +2,361 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { 
-  Scale, Calendar, Users, TrendingUp, AlertTriangle, CheckCircle, 
-  Search, Filter, Plus, FileText, ArrowUpRight, DollarSign,
-  Gavel, ArrowRight, History
+import { useRouter } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
+import {
+  Scale, Calendar, TrendingUp, AlertTriangle, CheckCircle, Search, Plus,
+  ArrowUpRight, Coins, Gavel, ArrowRight, PieChart as PieChartIcon,
+  Inbox, LayoutGrid, RefreshCw, Building2,
 } from 'lucide-react';
 import {
-  BarChart, Bar, PieChart, Pie, Cell, LineChart, Line,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
+  PieChart, Pie, Cell, LineChart, Line,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
+import { format, formatDistanceToNow } from 'date-fns';
+import { RoleGuard } from '@/components/advisory/RoleGuard';
+import { ChartTooltip } from '@/components/ChartTooltip';
+import { caseCategoryLabel } from '@/lib/litigationStatus';
 
-const PIE_COLORS = ['#EAB308', '#3B2718', '#EF4444', '#16A34A', '#6C4A28'];
-
-const MONTHLY_TRENDS = [
-  { month: 'Jan', count: 12 }, { month: 'Feb', count: 15 }, { month: 'Mar', count: 11 },
-  { month: 'Apr', count: 18 }, { month: 'May', count: 22 }, { month: 'Jun', count: 24 }
+const CATEGORY_COLORS = [
+  '#EAB308', '#3b82f6', '#ef4444', '#16a34a',
+  '#8b5cf6', '#06b6d4', '#f97316', '#ec4899', '#84cc16',
 ];
 
-const LITIGATION_CATEGORIES = [
-  { category: 'Labor Dispute', count: 18 },
-  { category: 'Debt Recovery', count: 42 },
-  { category: 'Breach of Contract', count: 15 },
-  { category: 'Property Claim', count: 8 },
-  { category: 'Regulatory', count: 5 }
-];
+interface StatsResponse {
+  summary: { activeCases: number; upcomingHearings: number; highRiskCases: number; totalExposure: number };
+  categories: { category: string; count: number }[];
+  trends: { month: string; count: number }[];
+  upcomingHearingsList: {
+    id: string; type: string; scheduledAt: string;
+    case: { id: string; caseNumber: string; title: string; court: string | null };
+  }[];
+}
 
-const RECENT_HEARINGS = [
-  { id: 'LIT-2026-041', case: 'Nib Bank vs. Global Tech', type: 'Hearing', date: 'Today, 10:00 AM', status: 'Pending', court: 'Federal High Court' },
-  { id: 'LIT-2026-038', case: 'Abebe T. vs Nib Bank', type: 'Verdict', date: 'Tomorrow, 2:00 PM', status: 'Scheduled', court: 'Supreme Court' },
-  { id: 'LIT-2026-045', case: 'Nib Bank vs. Zeta PLC', type: 'Filing', date: 'Jul 5, 2026', status: 'Pending', court: 'First Instance Court' },
-];
+function PanelEmpty({ message }: { message: string }) {
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      gap: 9, padding: '28px 14px', textAlign: 'center', color: 'var(--text-muted)',
+    }}>
+      <div style={{
+        width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        borderRadius: 13, background: 'var(--bg-input)', border: '1px solid var(--border)',
+      }}>
+        <Inbox size={19} />
+      </div>
+      <span style={{ fontSize: 12.5 }}>{message}</span>
+    </div>
+  );
+}
 
-export default function LitigationDashboard() {
+function LitigationDashboardInner() {
+  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+
+  const { data: stats, isLoading, isError, refetch } = useQuery<StatsResponse>({
+    queryKey: ['litigation-stats'],
+    queryFn: async () => {
+      const res = await fetch('/api/litigation/stats');
+      if (!res.ok) throw new Error('Failed to fetch stats');
+      return res.json();
+    },
+  });
+
+  /* Previously this input stored a term that was never read by anything. */
+  const submitSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = searchTerm.trim();
+    router.push(q ? `/litigation/active?q=${encodeURIComponent(q)}` : '/litigation/active');
+  };
 
   if (isLoading) {
     return (
-      <div className="flex flex-col gap-6 animate-pulse">
-        <div className="h-20 bg-bg-surface rounded-xl"></div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[1,2,3,4].map(i => <div key={i} className="h-28 bg-bg-surface rounded-xl"></div>)}
+      <div className="enterprise-page">
+        <div className="skeleton" style={{ height: 118, borderRadius: 'var(--radius-lg)' }} />
+        <div className="enterprise-kpi-grid">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="skeleton" style={{ height: 104, borderRadius: 'var(--radius-md)' }} />
+          ))}
         </div>
-        <div className="h-96 bg-bg-surface rounded-xl"></div>
+        <div className="enterprise-layout">
+          <div className="skeleton" style={{ height: 340, borderRadius: 'var(--radius-lg)' }} />
+          <div className="skeleton" style={{ height: 340, borderRadius: 'var(--radius-md)' }} />
+        </div>
       </div>
     );
   }
 
-  const statCards = [
-    { title: 'Total Active Cases', value: 88, icon: <Scale size={20} />, color: 'accent' },
-    { title: 'Upcoming Hearings', value: 12, icon: <Calendar size={20} />, color: 'warning' },
-    { title: 'High Risk Cases', value: 5, icon: <AlertTriangle size={20} />, color: 'danger' },
-    { title: 'Total Exposure', value: '24.5M', icon: <DollarSign size={20} />, color: 'info' },
+  if (isError) {
+    return (
+      <div className="enterprise-page">
+        <div className="alert alert-danger">
+          Could not load litigation statistics.
+          <button className="btn btn-sm btn-ghost" style={{ marginLeft: 10 }} onClick={() => refetch()}>
+            <RefreshCw size={14} /> Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const s = stats?.summary ?? { activeCases: 0, upcomingHearings: 0, highRiskCases: 0, totalExposure: 0 };
+  const categories = stats?.categories ?? [];
+  const trends = stats?.trends ?? [];
+  const hearings = stats?.upcomingHearingsList ?? [];
+
+  const exposureDisplay = s.totalExposure >= 1_000_000
+    ? `${(s.totalExposure / 1_000_000).toFixed(1)}M`
+    : s.totalExposure.toLocaleString();
+
+  const kpis = [
+    { title: 'Active Cases', value: s.activeCases.toLocaleString(), icon: <Scale size={19} />, tone: 'accent', href: '/litigation/active' },
+    { title: 'Upcoming Hearings', value: s.upcomingHearings.toLocaleString(), icon: <Calendar size={19} />, tone: 'warning', href: '/litigation/schedule' },
+    { title: 'High Risk Cases', value: s.highRiskCases.toLocaleString(), icon: <AlertTriangle size={19} />, tone: 'danger', href: '/litigation/active' },
+    { title: 'Total Exposure', value: `${exposureDisplay} ETB`, icon: <Coins size={19} />, tone: 'info', href: '/litigation/active' },
   ];
 
   return (
-    <div className="flex flex-col gap-6 animate-in fade-in pb-10">
-      
-      {/* ── Header & Toolbar ── */}
-      <div className="flex justify-between items-center bg-card p-6 rounded-xl border border-border shadow-sm">
-        <div>
-          <h1 className="text-2xl font-bold m-0 flex items-center gap-3 text-primary">
-            <Gavel size={24} className="text-accent" /> Litigation Management
-          </h1>
-          <p className="text-sm text-muted mt-1">Enterprise dashboard for tracking court cases, hearings, and financial exposure.</p>
-        </div>
-        <div className="flex gap-3">
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-            <input 
-              type="text" 
-              placeholder="Search cases..." 
-              className="form-control pl-9 w-64"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+    <div className="enterprise-page">
+
+      {/* ── Hero ─────────────────────────────────────────────────────────── */}
+      <div className="enterprise-hero">
+        <div className="enterprise-hero-content">
+          <div style={{ minWidth: 0 }}>
+            <div className="enterprise-kicker">
+              <span className="enterprise-id">LITIGATION</span>
+              <span className="badge status-active">Case Management</span>
+            </div>
+            <h1 className="enterprise-title">Litigation Management</h1>
+            <p className="enterprise-subtitle">
+              Court cases, hearing schedules and financial exposure across the bank&apos;s
+              active and closed litigation portfolio.
+            </p>
           </div>
-          <button className="btn btn-secondary"><Filter size={16} /> Filters</button>
-          <button className="btn btn-primary"><Plus size={16} /> New Case File</button>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 260 }}>
+            <form onSubmit={submitSearch} className="cm-search">
+              <Search />
+              <input
+                type="search"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search cases…"
+                aria-label="Search litigation cases"
+              />
+            </form>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Link href="/litigation/active" className="btn btn-ghost btn-sm" style={{ flex: 1, justifyContent: 'center' }}>
+                <LayoutGrid size={14} /> Browse
+              </Link>
+              <Link href="/litigation/new" className="btn btn-primary btn-sm" style={{ flex: 1, justifyContent: 'center' }}>
+                <Plus size={14} /> New case
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* ── KPI Cards ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {statCards.map((stat, idx) => (
-          <div key={idx} className={`card card-sm border-t-4 border-t-${stat.color} hover:-translate-y-1 transition-transform`}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-muted text-[11px] font-bold uppercase tracking-wider">{stat.title}</div>
-              <div className={`text-${stat.color} bg-${stat.color}/10 p-1.5 rounded-lg`}>{stat.icon}</div>
+      {/* ── KPI strip ────────────────────────────────────────────────────── */}
+      <div className="enterprise-kpi-grid">
+        {kpis.map((k) => (
+          <Link key={k.title} href={k.href} className={`enterprise-kpi tone-${k.tone}`} style={{ textDecoration: 'none' }}>
+            <div className="enterprise-kpi-head">
+              <div style={{ minWidth: 0 }}>
+                <div className="enterprise-kpi-label">{k.title}</div>
+                <div className="enterprise-kpi-number" style={{ fontSize: k.title === 'Total Exposure' ? 22 : undefined }}>
+                  {k.value}
+                </div>
+              </div>
+              <div className={`enterprise-kpi-icon tone-${k.tone}`}>{k.icon}</div>
             </div>
-            <div className="text-3xl font-bold font-mono text-primary">{stat.value}</div>
-          </div>
+          </Link>
         ))}
       </div>
 
-      {/* ── Main Dashboard Grid ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Chart: Volume over time */}
-        <div className="card lg:col-span-2">
-          <div className="flex items-center justify-between border-b border-border pb-4 mb-4">
-            <h3 className="font-bold flex items-center gap-2"><TrendingUp size={16} className="text-accent"/> Monthly Case Volume</h3>
-            <button className="btn btn-ghost btn-sm text-xs">Full Report <ArrowUpRight size={12}/></button>
-          </div>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={MONTHLY_TRENDS}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} />
-                <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }} />
-                <Line type="monotone" dataKey="count" stroke="var(--accent)" strokeWidth={3} dot={{ r: 4, fill: 'var(--bg-card)', strokeWidth: 2 }} activeDot={{ r: 6 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+      {/* ── Main / side ──────────────────────────────────────────────────── */}
+      <div className="enterprise-layout">
+        <div className="enterprise-main">
 
-        {/* Breakdown by Category */}
-        <div className="card">
-          <div className="flex items-center justify-between border-b border-border pb-4 mb-4">
-            <h3 className="font-bold flex items-center gap-2"><PieChart size={16} className="text-info"/> Cases by Type</h3>
+          {/* Case volume trend */}
+          <div className="enterprise-panel">
+            <div className="enterprise-panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div className="enterprise-panel-title"><TrendingUp /> Monthly Case Volume</div>
+              <Link href="/reports" className="btn btn-ghost btn-sm">
+                Reports <ArrowUpRight size={13} />
+              </Link>
+            </div>
+            <div className="enterprise-panel-body">
+              {trends.length === 0 ? (
+                <PanelEmpty message="Not enough history to plot a trend." />
+              ) : (
+                <div style={{ height: 240 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={trends} margin={{ top: 6, right: 10, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                      <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 11.5, fill: 'var(--text-muted)' }} />
+                      <YAxis axisLine={false} tickLine={false} allowDecimals={false} tick={{ fontSize: 11.5, fill: 'var(--text-muted)' }} />
+                      <Tooltip cursor={{ stroke: 'var(--border)' }} content={<ChartTooltip />} />
+                      <Line
+                        type="monotone" dataKey="count" name="Cases"
+                        stroke="var(--primary)" strokeWidth={2.5}
+                        dot={{ r: 3, fill: 'var(--surface)', strokeWidth: 2 }}
+                        activeDot={{ r: 5 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="h-48 mb-4">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={LITIGATION_CATEGORIES} dataKey="count" nameKey="category" cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5}>
-                  {LITIGATION_CATEGORIES.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="flex flex-col gap-2">
-            {LITIGATION_CATEGORIES.map((cat, i) => (
-              <div key={i} className="flex justify-between items-center text-sm p-2 hover:bg-bg-surface rounded-md transition-colors">
-                <span className="flex items-center gap-2 font-medium">
-                  <span className="w-2 h-2 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }}></span>
-                  {cat.category}
-                </span>
-                <span className="font-mono text-muted">{cat.count}</span>
+
+          {/* Court schedule */}
+          <div className="enterprise-panel">
+            <div className="enterprise-panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div className="enterprise-panel-title"><Calendar /> Court Schedule</div>
+              <Link href="/litigation/schedule" className="btn btn-ghost btn-sm">
+                Full schedule <ArrowRight size={13} />
+              </Link>
+            </div>
+            {hearings.length === 0 ? (
+              <div className="enterprise-panel-body">
+                <PanelEmpty message="No upcoming hearings scheduled." />
               </div>
-            ))}
+            ) : (
+              <div className="cm-table-wrap">
+                <table className="cm-table">
+                  <thead>
+                    <tr>
+                      <th>Case</th>
+                      <th>Hearing</th>
+                      <th>Court</th>
+                      <th style={{ textAlign: 'right' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {hearings.map((h) => (
+                      <tr key={h.id}>
+                        <td>
+                          <div className="cm-cell-strong">{h.case.title}</div>
+                          <div className="cm-cell-sub"><Gavel /> {h.case.caseNumber}</div>
+                        </td>
+                        <td>
+                          <div className="cm-muted-cell" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+                            <Calendar /> {format(new Date(h.scheduledAt), 'MMM d, yyyy p')}
+                          </div>
+                          <div className="cm-cell-sub">
+                            {caseCategoryLabel(h.type)} · {formatDistanceToNow(new Date(h.scheduledAt), { addSuffix: true })}
+                          </div>
+                        </td>
+                        <td><span className="cm-muted-cell"><Building2 /> {h.case.court ?? '—'}</span></td>
+                        <td style={{ textAlign: 'right' }}>
+                          <Link href={`/litigation/${h.case.id}`} className="btn btn-ghost btn-sm">Open case</Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Upcoming Hearings Data Table */}
-        <div className="card lg:col-span-2 p-0 overflow-hidden">
-          <div className="p-4 border-b border-border flex items-center justify-between bg-bg-surface">
-             <h3 className="font-bold flex items-center gap-2"><Calendar size={16} className="text-warning"/> Court Schedule</h3>
-             <button className="btn btn-ghost btn-sm text-xs">View Calendar <ArrowRight size={12}/></button>
+        {/* ── Sidebar ───────────────────────────────────────────────────── */}
+        <div className="enterprise-side">
+
+          {/* Risk assessment */}
+          <div className="enterprise-side-card">
+            <div className="enterprise-side-title"><AlertTriangle /> Risk Assessment</div>
+            {s.highRiskCases > 0 ? (
+              <>
+                <div className="cm-alert-row" style={{ display: 'block' }}>
+                  <div className="cm-alert-title">
+                    {s.highRiskCases} high-risk case{s.highRiskCases === 1 ? '' : 's'} open
+                  </div>
+                  <div className="cm-alert-sub">
+                    These require an executive summary for the Board of Directors.
+                  </div>
+                </div>
+                <Link href="/litigation/active" className="btn btn-secondary btn-sm" style={{ width: '100%', justifyContent: 'center', marginTop: 12 }}>
+                  Review high-risk cases <ArrowRight size={13} />
+                </Link>
+              </>
+            ) : (
+              <div style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                gap: 8, padding: '22px 8px', color: 'var(--success)', textAlign: 'center',
+              }}>
+                <CheckCircle size={34} style={{ opacity: 0.55 }} />
+                <span style={{ fontSize: 12.5, fontWeight: 600 }}>No high-risk cases at this time.</span>
+              </div>
+            )}
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-bg-input text-muted text-xs uppercase tracking-wider font-semibold border-b border-border">
-                <tr>
-                  <th className="py-3 px-4">Case Details</th>
-                  <th className="py-3 px-4">Schedule</th>
-                  <th className="py-3 px-4">Location</th>
-                  <th className="py-3 px-4 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {RECENT_HEARINGS.map((h, i) => (
-                  <tr key={i} className="hover:bg-card-hover transition-colors">
-                    <td className="py-3 px-4">
-                      <div className="font-semibold text-primary">{h.case}</div>
-                      <div className="text-xs text-muted font-mono">{h.id}</div>
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="font-medium text-warning flex items-center gap-1.5"><Calendar size={12}/> {h.date}</div>
-                      <div className="text-xs text-muted mt-1">{h.type}</div>
-                    </td>
-                    <td className="py-3 px-4 text-secondary">{h.court}</td>
-                    <td className="py-3 px-4 text-right">
-                      <button className="btn btn-secondary btn-sm">Prepare Docs</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+          {/* Cases by type */}
+          <div className="enterprise-side-card">
+            <div className="enterprise-side-title"><PieChartIcon /> Cases by Type</div>
+            {categories.length === 0 ? (
+              <PanelEmpty message="No cases recorded yet." />
+            ) : (
+              <>
+                <div style={{ height: 168, marginBottom: 10 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={categories} dataKey="count" nameKey="category"
+                        cx="50%" cy="50%" innerRadius={52} outerRadius={76} paddingAngle={3}
+                        stroke="var(--surface)" strokeWidth={2}
+                      >
+                        {categories.map((_, i) => (
+                          <Cell key={i} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<ChartTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="cm-legend">
+                  {categories.map((c, i) => (
+                    <div key={c.category} className="cm-legend-row">
+                      <span className="cm-legend-name">
+                        <span className="cm-legend-swatch" style={{ background: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }} />
+                        {caseCategoryLabel(c.category)}
+                      </span>
+                      <span className="cm-legend-count">{c.count}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Quick access */}
+          <div className="enterprise-side-card">
+            <div className="enterprise-side-title"><LayoutGrid /> Quick Access</div>
+            <div className="enterprise-detail-list">
+              {[
+                { label: 'Active cases', href: '/litigation/active' },
+                { label: 'Court schedule', href: '/litigation/schedule' },
+                { label: 'Case archive', href: '/litigation/archive' },
+                { label: 'Open a new case', href: '/litigation/new' },
+              ].map((l) => (
+                <Link key={l.href} href={l.href} className="enterprise-detail-row" style={{ textDecoration: 'none', color: 'inherit' }}>
+                  <span className="enterprise-detail-label">{l.label}</span>
+                  <ArrowRight size={13} style={{ color: 'var(--text-muted)' }} />
+                </Link>
+              ))}
+            </div>
           </div>
         </div>
-
-        {/* Action Panel */}
-        <div className="card border-warning/30 bg-warning/5">
-          <div className="flex items-center justify-between border-b border-warning/10 pb-4 mb-4">
-            <h3 className="font-bold flex items-center gap-2 text-warning-hover"><AlertTriangle size={16}/> Risk Assessment</h3>
-          </div>
-          <div className="flex flex-col gap-4">
-            <p className="text-sm text-warning-hover">
-              <strong>Action Required:</strong> You have 5 High-Risk cases that require Executive Summary reports for the Board of Directors.
-            </p>
-            <button className="btn btn-warning w-full justify-center">Generate Risk Reports</button>
-          </div>
-        </div>
-
       </div>
     </div>
+  );
+}
+
+export default function LitigationDashboard() {
+  return (
+    <RoleGuard roles={['manager', 'legal_officer', 'admin_assistant']}>
+      <LitigationDashboardInner />
+    </RoleGuard>
   );
 }

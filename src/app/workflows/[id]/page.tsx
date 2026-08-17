@@ -4,21 +4,21 @@ import { useState, useCallback, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { 
-  ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, 
-  BackgroundVariant, MarkerType
+import {
+  ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge,
+  BackgroundVariant, MarkerType, type Node, type Edge
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { ArrowLeft, Save, Play, Settings, Plus, Layout, GitMerge, FileText, CheckCircle, Zap } from 'lucide-react';
 
-const initialNodes = [
+const initialNodes: Node[] = [
   { id: 'start', position: { x: 250, y: 50 }, data: { label: 'Start' }, type: 'input' },
   { id: 'task-1', position: { x: 250, y: 150 }, data: { label: 'Initial Review' } },
   { id: 'approval-1', position: { x: 250, y: 250 }, data: { label: 'Manager Approval' } },
   { id: 'end', position: { x: 250, y: 350 }, data: { label: 'End' }, type: 'output' },
 ];
 
-const initialEdges = [
+const initialEdges: Edge[] = [
   { id: 'e1-2', source: 'start', target: 'task-1', markerEnd: { type: MarkerType.ArrowClosed } },
   { id: 'e2-3', source: 'task-1', target: 'approval-1', markerEnd: { type: MarkerType.ArrowClosed } },
   { id: 'e3-4', source: 'approval-1', target: 'end', markerEnd: { type: MarkerType.ArrowClosed }, label: 'Approved' },
@@ -30,8 +30,8 @@ export default function WorkflowDesigner() {
   const queryClient = useQueryClient();
   const router = useRouter();
 
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [isSidebarOpen, setSidebarOpen] = useState(true);
 
   const { data, isLoading } = useQuery({

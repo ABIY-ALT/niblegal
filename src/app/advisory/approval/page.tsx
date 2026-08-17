@@ -7,6 +7,7 @@ export default function PendingApprovalPage() {
     <RequestTable
       scope="approval"
       title="Pending Approval"
+      subtitle="Reviewed opinions awaiting sign-off from the Legal Manager."
       emptyMessage="No legal opinions are currently awaiting approval"
     />
   );

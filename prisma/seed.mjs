@@ -1,8 +1,11 @@
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import pg from 'pg';
 import bcrypt from 'bcryptjs';
+import 'dotenv/config';
 
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 // Mirrors src/data/store.ts `defaultUsers` so the mock-store-authenticated
@@ -95,9 +98,10 @@ async function main() {
 
   console.log('Seeding users...');
   const defaultPasswordHash = await bcrypt.hash('ChangeMe123!', 12);
+  const userByEmail = {};
   for (const u of USERS) {
     const [firstName, ...rest] = u.name.split(' ');
-    await prisma.user.upsert({
+    userByEmail[u.email] = await prisma.user.upsert({
       where: { email: u.email },
       update: {},
       create: {
@@ -146,6 +150,88 @@ async function main() {
     update: {},
     create: { name: 'Legal Opinions', code: 'LEGAL_OPINIONS', description: 'Archived legal opinions from the Legal Advisory Help Desk', icon: 'Gavel' },
   });
+
+  console.log('Seeding litigation cases...');
+  const manager = userByEmail['t.girma@nibbank.et'];
+  const officer1 = userByEmail['y.bekele@nibbank.et'];
+  const officer2 = userByEmail['m.alemu@nibbank.et'];
+  const LITIGATION_CASES = [
+    {
+      caseNumber: 'LIT-2026-000041', title: 'Nib Bank vs. Global Tech', category: 'BREACH_OF_CONTRACT',
+      status: 'ACTIVE', riskLevel: 'HIGH', bankRole: 'PLAINTIFF', opposingParty: 'Global Tech PLC',
+      court: 'Federal High Court', exposureAmount: 4200000, filedDate: new Date('2026-03-10'),
+      description: 'Breach of the IT services agreement resulting in undelivered infrastructure.',
+      officer: officer1, hearing: { type: 'HEARING', daysFromNow: 0, location: 'Federal High Court' },
+    },
+    {
+      caseNumber: 'LIT-2026-000038', title: 'Abebe T. vs Nib Bank', category: 'LABOR_DISPUTE',
+      status: 'ACTIVE', riskLevel: 'MEDIUM', bankRole: 'DEFENDANT', opposingParty: 'Abebe Tesfaye',
+      court: 'Supreme Court', exposureAmount: 850000, filedDate: new Date('2026-01-22'),
+      description: 'Wrongful termination claim filed by a former branch employee.',
+      officer: officer2, hearing: { type: 'VERDICT', daysFromNow: 1, location: 'Supreme Court' },
+    },
+    {
+      caseNumber: 'LIT-2026-000045', title: 'Nib Bank vs. Zeta PLC', category: 'DEBT_RECOVERY',
+      status: 'ACTIVE', riskLevel: 'HIGH', bankRole: 'PLAINTIFF', opposingParty: 'Zeta PLC',
+      court: 'First Instance Court', exposureAmount: 6100000, filedDate: new Date('2026-04-02'),
+      description: 'Recovery action on a defaulted commercial loan facility.',
+      officer: officer1, hearing: { type: 'FILING', daysFromNow: 4, location: 'First Instance Court' },
+    },
+    {
+      caseNumber: 'LIT-2026-000029', title: 'Nib Bank vs. Kebede Family Trust', category: 'PROPERTY_CLAIM',
+      status: 'ON_HOLD', riskLevel: 'LOW', bankRole: 'DEFENDANT', opposingParty: 'Kebede Family Trust',
+      court: 'First Instance Court', exposureAmount: 320000, filedDate: new Date('2025-11-05'),
+      description: 'Dispute over collateral property title pending mediation.',
+      officer: officer2,
+    },
+    {
+      caseNumber: 'LIT-2026-000052', title: 'National Bank of Ethiopia Compliance Review', category: 'REGULATORY',
+      status: 'PENDING', riskLevel: 'CRITICAL', bankRole: 'DEFENDANT', opposingParty: 'National Bank of Ethiopia',
+      court: 'Administrative Tribunal', exposureAmount: 1500000, filedDate: new Date('2026-05-18'),
+      description: 'Regulatory inquiry into AML/KYC control gaps flagged during audit.',
+      officer: manager,
+    },
+    {
+      caseNumber: 'LIT-2026-000012', title: 'Nib Bank vs. Solomon Retail Traders', category: 'DEBT_RECOVERY',
+      status: 'SETTLED', riskLevel: 'LOW', bankRole: 'PLAINTIFF', opposingParty: 'Solomon Retail Traders',
+      court: 'First Instance Court', exposureAmount: 210000, filedDate: new Date('2025-08-14'),
+      closedDate: new Date('2026-02-01'), outcome: 'Settled for full outstanding balance plus costs.',
+      officer: officer1,
+    },
+    {
+      caseNumber: 'LIT-2026-000005', title: 'Mekdes A. vs Nib Bank', category: 'CUSTOMER_DISPUTE',
+      status: 'WON', riskLevel: 'MEDIUM', bankRole: 'DEFENDANT', opposingParty: 'Mekdes Alemu',
+      court: 'Supreme Court', exposureAmount: 95000, filedDate: new Date('2025-06-20'),
+      closedDate: new Date('2025-12-10'), outcome: 'Claim dismissed in favor of the bank.',
+      officer: officer2,
+    },
+  ];
+
+  for (const c of LITIGATION_CASES) {
+    const { hearing, officer, ...rest } = c;
+    const existing = await prisma.litigationCase.findUnique({ where: { caseNumber: c.caseNumber } });
+    if (existing) continue;
+    const created = await prisma.litigationCase.create({
+      data: {
+        ...rest,
+        assignedOfficerId: officer?.id,
+        createdById: manager.id,
+      },
+    });
+    if (hearing) {
+      const scheduledAt = new Date();
+      scheduledAt.setDate(scheduledAt.getDate() + hearing.daysFromNow);
+      scheduledAt.setHours(10, 0, 0, 0);
+      await prisma.litigationHearing.create({
+        data: {
+          caseId: created.id,
+          type: hearing.type,
+          scheduledAt,
+          location: hearing.location,
+        },
+      });
+    }
+  }
 
   console.log('Seed complete.');
 }

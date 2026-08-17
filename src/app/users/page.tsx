@@ -5,7 +5,7 @@ import { RoleGuard } from '@/components/advisory/RoleGuard';
 
 export default function UsersPage() {
   return (
-    <RoleGuard roles={['manager', 'admin_assistant']}>
+    <RoleGuard roles={['manager', 'admin_assistant']} permission="admin.users">
       <UserManagement />
     </RoleGuard>
   );

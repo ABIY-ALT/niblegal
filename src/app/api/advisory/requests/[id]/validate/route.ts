@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/session';
+import { hasAccess } from '@/lib/access';
 import { logLegalActivity } from '@/lib/advisoryHistory';
 import { transitionStage } from '@/lib/workflow';
 
@@ -9,7 +10,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    if (!['admin_assistant', 'manager'].includes(user.role)) {
+    if (!hasAccess(user, { permission: 'advisory.assign', roles: ['admin_assistant', 'manager'] })) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

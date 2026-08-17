@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/session';
 import { knowledgeDocumentSchema } from '@/lib/validations/knowledge';
 import { generateDocumentNumber } from '@/lib/documentNumber';
+import { withUniqueRetry } from '@/lib/sequence';
 import { saveKnowledgeFile, UploadError } from '@/lib/uploadKnowledge';
 import { logKnowledgeActivity } from '@/lib/knowledgeHistory';
 import { buildKnowledgeDocumentWhere } from '@/lib/knowledgeQuery';
@@ -81,7 +82,6 @@ export async function POST(req: NextRequest) {
     };
 
     const validated = knowledgeDocumentSchema.parse(payload);
-    const documentNumber = await generateDocumentNumber();
     const status = submit ? 'UNDER_REVIEW' : 'DRAFT';
 
     const tagConnections = await Promise.all(
@@ -91,9 +91,10 @@ export async function POST(req: NextRequest) {
       }),
     );
 
-    const doc = await prisma.knowledgeDocument.create({
+    const doc = await withUniqueRetry(async () =>
+      prisma.knowledgeDocument.create({
       data: {
-        documentNumber,
+        documentNumber: await generateDocumentNumber(),
         title: validated.title,
         description: validated.description,
         categoryId: validated.categoryId,
@@ -114,7 +115,8 @@ export async function POST(req: NextRequest) {
         tags: { connect: tagConnections },
       },
       include: LIST_INCLUDE,
-    });
+      }),
+    );
 
     const file = formData.get('file');
     if (file instanceof File && file.size > 0) {
@@ -135,8 +137,8 @@ export async function POST(req: NextRequest) {
       actorId: user.id,
       action: submit ? 'SUBMITTED' : 'CREATED',
       description: submit
-        ? `Document ${documentNumber} submitted for review by ${user.name}`
-        : `Document ${documentNumber} saved as draft by ${user.name}`,
+        ? `Document ${doc.documentNumber} submitted for review by ${user.name}`
+        : `Document ${doc.documentNumber} saved as draft by ${user.name}`,
     });
 
     return NextResponse.json({ data: doc }, { status: 201 });

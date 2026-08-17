@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { WorkflowService } from '@/services/workflow.service';
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const workflow = await WorkflowService.getDefinition(params.id);
+    const { id } = await params;
+    const workflow = await WorkflowService.getDefinition(id);
     if (!workflow) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json({ workflow });
   } catch (error) {
@@ -11,17 +12,18 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 }
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const body = await req.json();
-    
+
     if (body.action === 'publish') {
-      await WorkflowService.publishVersion(params.id, body.versionId);
+      await WorkflowService.publishVersion(id, body.versionId);
       return NextResponse.json({ success: true });
     }
-    
+
     if (body.action === 'new_version') {
-      const newVersion = await WorkflowService.createNewVersion(params.id, body.baseVersionId);
+      const newVersion = await WorkflowService.createNewVersion(id, body.baseVersionId);
       return NextResponse.json({ version: newVersion });
     }
 

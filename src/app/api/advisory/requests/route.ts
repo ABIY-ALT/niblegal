@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/session';
 import { legalRequestSchema } from '@/lib/validations/advisory';
 import { generateRequestNumber } from '@/lib/requestNumber';
+import { withUniqueRetry } from '@/lib/sequence';
 import { calculateDeadline } from '@/lib/sla';
 import { resolveSlaHours } from '@/lib/slaRules';
 import { logLegalActivity } from '@/lib/advisoryHistory';
@@ -50,12 +51,14 @@ export async function POST(req: NextRequest) {
 
     const slaHours = await resolveSlaHours(validated.priority, validated.categoryId);
     const slaDeadline = calculateDeadline(slaHours);
-    const requestNumber = await generateRequestNumber();
     const status = submit ? 'SUBMITTED' : 'DRAFT';
 
-    const legalRequest = await prisma.legalRequest.create({
+    // Generation + insert retried together so a concurrent create cannot leave
+    // this request holding a number that was just taken.
+    const legalRequest = await withUniqueRetry(async () =>
+      prisma.legalRequest.create({
       data: {
-        requestNumber,
+        requestNumber: await generateRequestNumber(),
         subject: validated.subject,
         description: validated.description,
         requestType: validated.requestType,
@@ -72,7 +75,8 @@ export async function POST(req: NextRequest) {
         slaDeadline,
       },
       include: LIST_INCLUDE,
-    });
+      }),
+    );
 
     await prisma.legalWorkflow.create({
       data: { legalRequestId: legalRequest.id, stage: status, actorId: user.id },
@@ -83,8 +87,8 @@ export async function POST(req: NextRequest) {
       actorId: user.id,
       action: submit ? 'SUBMITTED' : 'CREATED',
       description: submit
-        ? `Request ${requestNumber} submitted by ${user.name}`
-        : `Request ${requestNumber} saved as draft by ${user.name}`,
+        ? `Request ${legalRequest.requestNumber} submitted by ${user.name}`
+        : `Request ${legalRequest.requestNumber} saved as draft by ${user.name}`,
     });
 
     return NextResponse.json({ data: legalRequest }, { status: 201 });

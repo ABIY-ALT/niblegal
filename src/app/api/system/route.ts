@@ -15,6 +15,12 @@ export async function GET(req: NextRequest) {
 
     const searchParams = req.nextUrl.searchParams;
     const type = searchParams.get('type') || 'all';
+    const section = searchParams.get('section');
+
+    if (section === 'settings') {
+      const system = await SystemService.getSystemSettings();
+      return NextResponse.json({ data: system });
+    }
 
     const [
       system,
@@ -101,6 +107,22 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+  } catch (error) {
+    return NextResponse.json({ error: 'Failed to process request' }, { status: 500 });
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    await ensureAdmin();
+    const body = await req.json();
+    
+    if (body.section === 'settings') {
+      const updated = await SystemService.updateSystemSettings(body.data);
+      return NextResponse.json({ data: updated });
+    }
+    
+    return NextResponse.json({ error: 'Invalid section' }, { status: 400 });
   } catch (error) {
     return NextResponse.json({ error: 'Failed to process request' }, { status: 500 });
   }

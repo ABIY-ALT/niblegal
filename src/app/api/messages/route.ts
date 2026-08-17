@@ -1,25 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { MessageService } from '@/services/message.service';
-import { prisma } from '@/lib/prisma';
-
-async function getSessionUserId() {
-  const user = await prisma.user.findFirst({ where: { role: { name: 'Admin' } } });
-  return user?.id || '';
-}
+import { getCurrentUser } from '@/lib/session';
 
 export async function GET(req: NextRequest) {
   try {
-    const userId = await getSessionUserId();
-    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const user = await getCurrentUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const searchParams = req.nextUrl.searchParams;
     const type = searchParams.get('type') || 'inbox'; // inbox, sent
 
     let messages;
     if (type === 'sent') {
-      messages = await MessageService.getSent(userId);
+      messages = await MessageService.getSent(user.id);
     } else {
-      messages = await MessageService.getInbox(userId);
+      messages = await MessageService.getInbox(user.id);
     }
 
     return NextResponse.json({ messages });
@@ -31,10 +26,13 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const userId = await getSessionUserId();
-    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const user = await getCurrentUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = await req.json();
+    if (!body.recipientId || !body.body?.trim()) {
+      return NextResponse.json({ error: 'Recipient and message are required' }, { status: 400 });
+    }
     
     // Simplification for sending message
     if (body.threadId) {
@@ -42,14 +40,17 @@ export async function POST(req: NextRequest) {
         threadId: body.threadId,
         body: body.body,
         recipientId: body.recipientId,
-        senderId: userId,
+        senderId: user.id,
       });
     } else {
+      if (!body.subject?.trim()) {
+        return NextResponse.json({ error: 'Subject is required' }, { status: 400 });
+      }
       await MessageService.createThread({
         subject: body.subject,
         body: body.body,
         recipientId: body.recipientId,
-        senderId: userId,
+        senderId: user.id,
       });
     }
     

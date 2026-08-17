@@ -1,177 +1,248 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import {
-  TrendingUp, FileText, Gavel, Clock, Users, ShieldAlert,
-  BarChart3, Settings, Calendar, Download, Search, Filter, 
-  ArrowUpRight, ArrowDownRight, ArrowRight, PieChart as PieChartIcon
+  TrendingUp, FileText, Gavel, Clock, ShieldAlert, BarChart3, Settings,
+  Calendar, Download, ArrowRight, Users, BookOpen, Activity, Layers,
 } from 'lucide-react';
 import {
-  BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
-} from 'recharts';
+  ReportShell, KPI, BarList, Donut, TrendChart, ReportPanel, ReportEmpty,
+  useReportSummary, humanize,
+} from '@/components/reports/ReportKit';
 
-const PIE_COLORS = ['#EAB308', '#3B2718', '#16A34A', '#6C4A28', '#EF4444'];
+/**
+ * Reports hub.
+ *
+ * Everything on this page now comes from /api/reports/summary. It previously
+ * rendered hardcoded arrays (MONTHLY_DATA, SLA_DATA) and invented KPI figures
+ * — "1,284 total volume", "94.2% SLA compliance", per-department SLA
+ * percentages — presented as if they were live bank data.
+ */
 
-const MONTHLY_DATA = [
-  { month: 'Jan', contracts: 40, advisory: 24, compliance: 98 },
-  { month: 'Feb', contracts: 30, advisory: 28, compliance: 95 },
-  { month: 'Mar', contracts: 45, advisory: 32, compliance: 96 },
-  { month: 'Apr', contracts: 50, advisory: 36, compliance: 99 },
-  { month: 'May', contracts: 65, advisory: 42, compliance: 92 },
-  { month: 'Jun', contracts: 85, advisory: 50, compliance: 97 }
-];
-
-const SLA_DATA = [
-  { department: 'HR', met: 94, breached: 6 },
-  { department: 'IT', met: 88, breached: 12 },
-  { department: 'Finance', met: 98, breached: 2 },
-  { department: 'Operations', met: 82, breached: 18 },
-  { department: 'Procurement', met: 91, breached: 9 }
+const QUICK_REPORTS = [
+  { title: 'Executive Summary', sub: 'Cross-module overview', icon: <BarChart3 />, href: '/reports/executive' },
+  { title: 'Contract Analysis', sub: 'Status, category, department', icon: <FileText />, href: '/reports/contracts' },
+  { title: 'Advisory Performance', sub: 'Volume and officer load', icon: <Gavel />, href: '/reports/advisory' },
+  { title: 'SLA Compliance', sub: 'Turnaround and breaches', icon: <Clock />, href: '/reports/sla' },
+  { title: 'Officer Performance', sub: 'Workload distribution', icon: <Users />, href: '/reports/performance' },
+  { title: 'Compliance', sub: 'Regulatory posture', icon: <ShieldAlert />, href: '/reports/compliance' },
+  { title: 'Analytics', sub: 'Trends over time', icon: <Activity />, href: '/reports/analytics' },
+  { title: 'Audit Trail', sub: 'System-wide event log', icon: <Layers />, href: '/reports/audit' },
 ];
 
 export default function ReportsHub() {
-  const [timeRange, setTimeRange] = useState('6m');
-
-  const statCards = [
-    { title: 'Total Volume', value: '1,284', trend: '+14%', isUp: true, icon: <TrendingUp size={20} />, color: 'accent' },
-    { title: 'SLA Compliance', value: '94.2%', trend: '+2.1%', isUp: true, icon: <Clock size={20} />, color: 'success' },
-    { title: 'Pending Reviews', value: '42', trend: '-5%', isUp: false, icon: <FileText size={20} />, color: 'warning' },
-    { title: 'Risk Alerts', value: '7', trend: '+2', isUp: false, icon: <ShieldAlert size={20} />, color: 'danger' },
-  ];
-
-  const quickReports = [
-    { title: 'Executive Summary', icon: <BarChart3 size={16}/>, href: '/reports/executive', color: 'text-accent bg-accent/10' },
-    { title: 'Contract Analysis', icon: <FileText size={16}/>, href: '/reports/contracts', color: 'text-info bg-info/10' },
-    { title: 'Advisory Performance', icon: <Gavel size={16}/>, href: '/reports/advisory', color: 'text-success bg-success/10' },
-    { title: 'SLA Breaches', icon: <Clock size={16}/>, href: '/reports/sla', color: 'text-warning bg-warning/10' },
-  ];
+  const { data, isLoading, isError, refetch } = useReportSummary();
 
   return (
-    <div className="flex flex-col gap-6 animate-in fade-in pb-10">
-      
-      {/* ── Header ── */}
-      <div className="flex justify-between items-center bg-card p-6 rounded-xl border border-border shadow-sm shrink-0">
-        <div>
-          <h1 className="text-2xl font-bold m-0 flex items-center gap-3 text-primary">
-            <BarChart3 size={24} className="text-accent" /> Enterprise Analytics
-          </h1>
-          <p className="text-sm text-muted mt-1">Comprehensive reports, dashboards, and operational analytics.</p>
-        </div>
-        <div className="flex gap-3">
-          <div className="flex border border-border rounded-lg overflow-hidden bg-bg-input">
-            <button className={`px-3 py-1.5 text-xs font-medium ${timeRange === '1m' ? 'bg-bg-surface shadow' : 'text-muted'}`} onClick={() => setTimeRange('1m')}>1M</button>
-            <button className={`px-3 py-1.5 text-xs font-medium ${timeRange === '3m' ? 'bg-bg-surface shadow' : 'text-muted'}`} onClick={() => setTimeRange('3m')}>3M</button>
-            <button className={`px-3 py-1.5 text-xs font-medium ${timeRange === '6m' ? 'bg-bg-surface shadow' : 'text-muted'}`} onClick={() => setTimeRange('6m')}>6M</button>
-            <button className={`px-3 py-1.5 text-xs font-medium ${timeRange === '1y' ? 'bg-bg-surface shadow' : 'text-muted'}`} onClick={() => setTimeRange('1y')}>1Y</button>
+    <ReportShell
+      title="Reports & Analytics"
+      subtitle="Live operational reporting across contracts, legal advisory and the knowledge base."
+      loading={isLoading}
+      error={isError}
+      onRetry={() => refetch()}
+      actions={
+        <>
+          <Link href="/reports/export" className="btn btn-ghost btn-sm">
+            <Download size={14} /> Export
+          </Link>
+          <Link href="/reports/scheduled" className="btn btn-ghost btn-sm">
+            <Calendar size={14} /> Scheduled
+          </Link>
+          <Link href="/reports/builder" className="btn btn-primary btn-sm">
+            <Settings size={14} /> Report Builder
+          </Link>
+        </>
+      }
+    >
+      {data && (
+        <>
+          {/* ── Headline KPIs (all real counts) ────────────────────────── */}
+          <div className="enterprise-kpi-grid">
+            <KPI
+              title="Total Volume"
+              value={(data.contracts.total + data.advisory.total).toLocaleString()}
+              color="accent"
+              icon={<TrendingUp size={19} />}
+              hint={`${data.contracts.total} contracts · ${data.advisory.total} advisory`}
+            />
+            <KPI
+              title="SLA Compliance"
+              value={`${data.advisory.slaCompliance}%`}
+              color={data.advisory.slaCompliance >= 90 ? 'success' : data.advisory.slaCompliance >= 75 ? 'warning' : 'danger'}
+              icon={<Clock size={19} />}
+              hint={
+                data.advisory.total === 0
+                  ? 'No advisory requests to measure'
+                  : `${data.advisory.breached} breached of ${data.advisory.total}`
+              }
+            />
+            <KPI
+              title="Pending Reviews"
+              value={(data.contracts.underReview + data.contracts.pendingApproval + data.advisory.pending).toLocaleString()}
+              color="warning"
+              icon={<FileText size={19} />}
+              hint="Contracts and advisory awaiting action"
+            />
+            <KPI
+              title="Risk Alerts"
+              value={(data.contracts.expiring + data.contracts.expired + data.advisory.overdue).toLocaleString()}
+              color="danger"
+              icon={<ShieldAlert size={19} />}
+              hint="Expiring, expired and overdue items"
+            />
           </div>
-          <button className="btn btn-secondary"><Download size={16}/> Export Data</button>
-        </div>
-      </div>
 
-      {/* ── KPI Cards ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
-        {statCards.map((stat, idx) => (
-          <div key={idx} className={`card card-sm border-t-4 border-t-${stat.color} hover:-translate-y-1 transition-transform`}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-muted text-[11px] font-bold uppercase tracking-wider">{stat.title}</div>
-              <div className={`text-${stat.color} bg-${stat.color}/10 p-1.5 rounded-lg`}>{stat.icon}</div>
+          {/* ── Secondary strip ───────────────────────────────────────── */}
+          <div className="enterprise-actionbar">
+            <div className="enterprise-actionbar-left">
+              <span className="enterprise-actionbar-title">Portfolio</span>
+              <span className="badge status-active">{data.contracts.active} active contracts</span>
+              <span className="badge status-executed">{data.contracts.executed} executed</span>
+              <span className="badge status-approved">{data.knowledge.published} published documents</span>
+              <span className="badge status-draft">{data.officers.length} officers</span>
             </div>
-            <div className="flex items-end gap-3">
-              <div className="text-3xl font-bold font-mono text-primary">{stat.value}</div>
-              <div className={`flex items-center text-xs font-bold mb-1 ${stat.isUp ? (stat.color === 'danger' || stat.color === 'warning' ? 'text-danger' : 'text-success') : (stat.color === 'danger' || stat.color === 'warning' ? 'text-success' : 'text-danger')}`}>
-                {stat.isUp ? <ArrowUpRight size={14}/> : <ArrowDownRight size={14}/>}
-                {stat.trend}
+            <div className="enterprise-actionbar-actions">
+              <Link href="/reports/executive" className="btn btn-ghost btn-sm">
+                Executive summary <ArrowRight size={13} />
+              </Link>
+            </div>
+          </div>
+
+          {/* ── Main / side ───────────────────────────────────────────── */}
+          <div className="enterprise-layout">
+            <div className="enterprise-main">
+
+              <ReportPanel
+                title="Workload Trajectory"
+                icon={<TrendingUp />}
+                actions={
+                  <Link href="/reports/analytics" className="btn btn-ghost btn-sm">
+                    Analytics <ArrowRight size={13} />
+                  </Link>
+                }
+              >
+                <TrendChart series={data.trends} />
+              </ReportPanel>
+
+              <ReportPanel
+                title="Contracts by Department"
+                icon={<Users />}
+                actions={
+                  <Link href="/reports/contracts" className="btn btn-ghost btn-sm">
+                    Detail <ArrowRight size={13} />
+                  </Link>
+                }
+              >
+                <BarList
+                  data={data.contracts.byDepartment.map((d) => ({ label: d.name, value: d.count }))}
+                />
+              </ReportPanel>
+
+              <ReportPanel title="Contracts by Status" icon={<FileText />}>
+                <Donut
+                  data={Object.entries(data.contracts.byStatus).map(([k, v]) => ({
+                    label: humanize(k),
+                    value: v,
+                  }))}
+                />
+              </ReportPanel>
+            </div>
+
+            {/* ── Sidebar ────────────────────────────────────────────── */}
+            <div className="enterprise-side">
+
+              <div className="enterprise-side-card">
+                <div className="enterprise-side-title"><Clock /> Advisory SLA</div>
+                {data.advisory.total === 0 ? (
+                  <ReportEmpty message="No advisory requests recorded yet." />
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                      <div style={{ flex: 1, height: 8, borderRadius: 20, background: 'var(--bg-input)', overflow: 'hidden' }}>
+                        <div style={{
+                          width: `${data.advisory.slaCompliance}%`, height: '100%', borderRadius: 20,
+                          background: data.advisory.slaCompliance >= 90 ? 'var(--success)'
+                            : data.advisory.slaCompliance >= 75 ? 'var(--warning)' : 'var(--danger)',
+                        }} />
+                      </div>
+                      <span style={{ fontWeight: 800, fontFamily: 'Outfit, sans-serif', fontSize: 17 }}>
+                        {data.advisory.slaCompliance}%
+                      </span>
+                    </div>
+                    <div className="enterprise-detail-list">
+                      <div className="enterprise-detail-row">
+                        <span className="enterprise-detail-label">Avg turnaround</span>
+                        <span className="enterprise-detail-value">{data.advisory.avgTurnaroundHours}h</span>
+                      </div>
+                      <div className="enterprise-detail-row">
+                        <span className="enterprise-detail-label">Breached</span>
+                        <span className="enterprise-detail-value">{data.advisory.breached}</span>
+                      </div>
+                      <div className="enterprise-detail-row">
+                        <span className="enterprise-detail-label">Overdue (open)</span>
+                        <span className="enterprise-detail-value">{data.advisory.overdue}</span>
+                      </div>
+                      <div className="enterprise-detail-row">
+                        <span className="enterprise-detail-label">Closed</span>
+                        <span className="enterprise-detail-value">{data.advisory.closed}</span>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="enterprise-side-card">
+                <div className="enterprise-side-title"><Users /> Officer Workload</div>
+                {data.officers.length === 0 ? (
+                  <ReportEmpty message="No officer assignments yet." />
+                ) : (
+                  <div className="enterprise-detail-list">
+                    {data.officers.map((o) => (
+                      <div key={o.id} className="enterprise-detail-row">
+                        <span className="enterprise-detail-label">{o.name}</span>
+                        <span className="enterprise-detail-value">{o.contracts + o.advisory} items</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="enterprise-side-card">
+                <div className="enterprise-side-title"><BookOpen /> Knowledge Base</div>
+                <div className="enterprise-detail-list">
+                  <div className="enterprise-detail-row">
+                    <span className="enterprise-detail-label">Total documents</span>
+                    <span className="enterprise-detail-value">{data.knowledge.total}</span>
+                  </div>
+                  <div className="enterprise-detail-row">
+                    <span className="enterprise-detail-label">Published</span>
+                    <span className="enterprise-detail-value">{data.knowledge.published}</span>
+                  </div>
+                </div>
+                <Link href="/knowledge/dashboard" className="btn btn-secondary btn-sm" style={{ width: '100%', justifyContent: 'center', marginTop: 12 }}>
+                  Knowledge dashboard <ArrowRight size={13} />
+                </Link>
               </div>
             </div>
           </div>
-        ))}
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Main Area Chart */}
-        <div className="card lg:col-span-2 flex flex-col border border-border shadow-sm">
-          <div className="flex items-center justify-between border-b border-border pb-4 mb-4">
-            <h3 className="font-bold flex items-center gap-2"><TrendingUp size={16} className="text-accent"/> Workload Trajectory</h3>
-            <div className="flex gap-4 text-xs font-medium">
-              <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-accent"></div> Contracts</span>
-              <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-gold"></div> Advisory</span>
-            </div>
-          </div>
-          <div className="h-72 flex-1">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={MONTHLY_DATA} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorContracts" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="var(--accent)" stopOpacity={0}/>
-                  </linearGradient>
-                  <linearGradient id="colorAdvisory" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--gold)" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="var(--gold)" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} />
-                <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }} />
-                <Area type="monotone" dataKey="contracts" stroke="var(--accent)" strokeWidth={2} fillOpacity={1} fill="url(#colorContracts)" />
-                <Area type="monotone" dataKey="advisory" stroke="var(--gold)" strokeWidth={2} fillOpacity={1} fill="url(#colorAdvisory)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Quick Reports & Actions */}
-        <div className="flex flex-col gap-6">
-          <div className="card border border-border shadow-sm">
-            <h3 className="font-bold flex items-center gap-2 mb-4"><FileText size={16} className="text-primary"/> Quick Reports</h3>
-            <div className="flex flex-col gap-2">
-              {quickReports.map((report, i) => (
-                <Link key={i} href={report.href} className="flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary/30 hover:bg-bg-surface transition-colors group">
-                  <div className={`w-8 h-8 rounded-md flex items-center justify-center ${report.color}`}>
-                    {report.icon}
-                  </div>
-                  <span className="font-medium text-sm flex-1 group-hover:text-primary transition-colors">{report.title}</span>
-                  <ArrowRight size={14} className="text-muted group-hover:text-primary transition-colors group-hover:translate-x-1" />
+          {/* ── Report launcher ───────────────────────────────────────── */}
+          <ReportPanel title="All Reports" icon={<BarChart3 />}>
+            <div className="rk-launch-grid">
+              {QUICK_REPORTS.map((r) => (
+                <Link key={r.href} href={r.href} className="rk-launch">
+                  <span className="rk-launch-icon">{r.icon}</span>
+                  <span className="rk-launch-body">
+                    <span className="rk-launch-title" style={{ display: 'block' }}>{r.title}</span>
+                    <span className="rk-launch-sub" style={{ display: 'block' }}>{r.sub}</span>
+                  </span>
+                  <ArrowRight size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
                 </Link>
               ))}
             </div>
-            <button className="btn btn-secondary w-full mt-4 justify-center"><Settings size={14}/> Report Builder</button>
-          </div>
-
-          <div className="card bg-gradient-to-br from-bg-card to-bg-surface border border-border shadow-sm flex-1 flex flex-col justify-center text-center p-6">
-             <div className="w-12 h-12 bg-primary/10 text-primary rounded-full flex items-center justify-center mx-auto mb-3">
-               <Calendar size={24} />
-             </div>
-             <h3 className="font-bold mb-1">Scheduled Exports</h3>
-             <p className="text-xs text-muted mb-4">You have 2 automated reports scheduled for delivery this week.</p>
-             <button className="btn btn-primary btn-sm mx-auto">Manage Schedule</button>
-          </div>
-        </div>
-
-        {/* SLA Performance Bar Chart */}
-        <div className="card lg:col-span-3 border border-border shadow-sm">
-          <div className="flex items-center justify-between border-b border-border pb-4 mb-4">
-            <h3 className="font-bold flex items-center gap-2"><Clock size={16} className="text-success"/> Departmental SLA Performance</h3>
-          </div>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={SLA_DATA} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="department" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} />
-                <Tooltip cursor={{ fill: 'var(--bg-input)' }} contentStyle={{ borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)' }} />
-                <Bar dataKey="met" name="SLA Met (%)" fill="var(--success)" radius={[4, 4, 0, 0]} stackId="a" />
-                <Bar dataKey="breached" name="SLA Breached (%)" fill="var(--danger)" radius={[4, 4, 0, 0]} stackId="a" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-      </div>
-    </div>
+          </ReportPanel>
+        </>
+      )}
+    </ReportShell>
   );
 }

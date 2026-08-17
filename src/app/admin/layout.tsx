@@ -2,21 +2,25 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Users, Shield, Building, GitMerge, List, Settings } from 'lucide-react';
+import { Users, Shield, Building, GitMerge, List, Settings, LayoutDashboard, Mail, Bell, Sliders } from 'lucide-react';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? '';
 
   const nav = [
+    { href: '/admin', label: 'Overview', icon: <LayoutDashboard size={16} /> },
     { href: '/admin/users', label: 'User Management', icon: <Users size={16} /> },
     { href: '/admin/roles', label: 'Role Security', icon: <Shield size={16} /> },
     { href: '/admin/departments', label: 'Departments', icon: <Building size={16} /> },
     { href: '/admin/workflows', label: 'Workflows', icon: <GitMerge size={16} /> },
+    { href: '/admin/emails', label: 'Email Templates', icon: <Mail size={16} /> },
+    { href: '/admin/notifications', label: 'Notifications', icon: <Bell size={16} /> },
+    { href: '/admin/settings', label: 'Settings', icon: <Sliders size={16} /> },
     { href: '/admin/audit-logs', label: 'Audit Trail', icon: <List size={16} /> },
   ];
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div style={{ width: '100%', maxWidth: 'none', margin: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* Admin Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
@@ -28,9 +32,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </div>
 
       {/* Admin Navigation */}
-      <div className="tabs-bar" style={{ marginBottom: 10 }}>
+      <div className="tabs-bar" style={{ marginBottom: 10, overflowX: 'auto', whiteSpace: 'nowrap' }}>
         {nav.map(link => {
-          const isActive = pathname.startsWith(link.href);
+          const isActive = link.href === '/admin' ? pathname === '/admin' : pathname.startsWith(link.href);
           return (
             <Link key={link.href} href={link.href} className={`tab-btn ${isActive ? 'active' : ''}`} style={{ textDecoration: 'none' }}>
               {link.icon} {link.label}

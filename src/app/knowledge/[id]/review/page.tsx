@@ -13,7 +13,7 @@ import type { ApprovalDecision, KnowledgeDocumentDetail } from '@/types/knowledg
 
 export default function ReviewDocumentPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <RoleGuard roles={['legal_officer', 'admin_assistant']}>
+    <RoleGuard roles={['legal_officer', 'admin_assistant']} permission="knowledge.approve">
       <ReviewDocumentPageContent params={params} />
     </RoleGuard>
   );

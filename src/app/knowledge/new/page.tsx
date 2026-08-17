@@ -172,8 +172,9 @@ export default function UploadKnowledgeItemPage() {
   };
 
   return (
-    <RoleGuard roles={['manager', 'legal_officer', 'admin_assistant', 'requesting_organ']}>
-      <div className="max-w-4xl mx-auto flex flex-col gap-5">
+    <RoleGuard roles={['manager', 'legal_officer', 'admin_assistant', 'requesting_organ']} permission="knowledge.create">
+      <div className="flex justify-center w-full">
+      <div className="max-w-4xl w-full flex flex-col gap-5">
         <div>
           <Link href="/knowledge" className="btn btn-ghost btn-sm pl-0 mb-3">
             <ArrowLeft size={16} /> Back to Repository
@@ -341,6 +342,7 @@ export default function UploadKnowledgeItemPage() {
             </div>
           </form>
         </div>
+      </div>
       </div>
     </RoleGuard>
   );

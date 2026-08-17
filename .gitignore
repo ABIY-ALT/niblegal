@@ -36,6 +36,8 @@ next-env.d.ts
 
 # Uploads
 /public/uploads
+# Private attachment store — served only via /api/files (never statically)
+/storage
 
 # Editor/tooling
 .qodo

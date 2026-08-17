@@ -37,9 +37,7 @@ export type ContractStatus =
   | 'draft' | 'under_review' | 'pending_approval' | 'approved'
   | 'executed' | 'active' | 'expiring_soon' | 'expired' | 'terminated' | 'renewed';
 
-export type ContractCategory =
-  | 'service_agreement' | 'procurement' | 'employment' | 'lease'
-  | 'loan_agreement' | 'nda' | 'partnership' | 'consultancy' | 'other';
+export type ContractCategory = string;
 
 export interface ContractVersion {
   version: number;

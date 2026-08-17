@@ -30,6 +30,9 @@ export const PERMISSION_CATALOG: PermissionDef[] = [
   { name: 'knowledge.view', description: 'View the knowledge repository', group: 'Knowledge' },
   { name: 'knowledge.create', description: 'Author knowledge documents', group: 'Knowledge' },
   { name: 'knowledge.approve', description: 'Approve/publish knowledge documents', group: 'Knowledge' },
+  // Litigation
+  { name: 'litigation.view', description: 'View litigation cases and the court schedule', group: 'Litigation' },
+  { name: 'litigation.manage', description: 'Open, update and archive litigation cases', group: 'Litigation' },
   // Reports
   { name: 'reports.view', description: 'View dashboards & reports', group: 'Reports' },
   { name: 'reports.export', description: 'Export reports', group: 'Reports' },

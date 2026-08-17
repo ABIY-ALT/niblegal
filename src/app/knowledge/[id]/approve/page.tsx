@@ -13,7 +13,7 @@ import type { ApprovalDecision, KnowledgeDocumentDetail } from '@/types/knowledg
 
 export default function ManagerApprovalPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <RoleGuard roles={['manager']}>
+    <RoleGuard roles={['manager']} permission="knowledge.approve">
       <ManagerApprovalPageContent params={params} />
     </RoleGuard>
   );
