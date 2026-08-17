@@ -7,7 +7,6 @@ import {
   Fingerprint, ArrowLeft, RefreshCw, ChevronRight,
 } from 'lucide-react';
 import Image from 'next/image';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -109,8 +108,9 @@ function LockBanner({ remainingMs }: { remainingMs: number }) {
 // ── Hanging Badge ─────────────────────────────────────────────────────────────
 const HangingBadge = () => {
   return (
-    /* Positioning container: absolute to top-left of the parent */
-    <div className="absolute top-0 left-12 z-20 pointer-events-none select-none group hidden sm:block">
+    /* Top-right: the artwork already puts the NIB crest in the top-left, so the
+       badge hangs over the clean hexagon field on the right instead. */
+    <div className="absolute top-0 right-12 z-20 pointer-events-none select-none group hidden sm:block">
       <div className="relative flex flex-col items-center">
         {/* The "Pin" or Nail holding the string */}
         <div className="w-1.5 h-1.5 rounded-full bg-accent/90 border border-accent/20 shadow-sm z-30" />
@@ -156,7 +156,6 @@ export default function LoginPage() {
   // Form state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [mfaCode, setMfaCode] = useState('');
 
@@ -207,7 +206,9 @@ export default function LoginPage() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, rememberMe }),
+        /* "Remember me" is gone from the form, so every session is now the
+           short one the API issues for rememberMe=false (8 hours, not 30 days). */
+        body: JSON.stringify({ email, password, rememberMe: false }),
       });
       const data = await res.json();
 
@@ -273,7 +274,7 @@ export default function LoginPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="login-page login-page-hero login-hero-right relative overflow-hidden">
+    <div className="login-page login-page-hero relative">
       {/* Hero background image */}
       <div className="login-hero-bg" aria-hidden="true" />
 
@@ -283,8 +284,8 @@ export default function LoginPage() {
       {/* System by EPMO Hanging Badge */}
       <HangingBadge />
 
-      {/* Login card, anchored right over the hero artwork */}
-      <div className="login-hero-wrapper login-hero-wrapper-right">
+      {/* Login card, centered over the hero artwork */}
+      <div className="login-hero-wrapper">
         {/* Card */}
         <div className="login-card login-card-glass login-card-secure">
 
@@ -308,7 +309,6 @@ export default function LoginPage() {
           {step === 'credentials' && (
             <>
               <div className="login-card-header">
-                <h2 className="login-access-title">Secure System Access</h2>
                 <p className="login-access-sub">Welcome to the Legal Department System</p>
               </div>
 
@@ -390,25 +390,6 @@ export default function LoginPage() {
                   )}
                 </div>
 
-                {/* Remember me + forgot password */}
-                <div className="login-meta-row">
-                  <label className="login-checkbox-label" htmlFor="rememberMe">
-                    <input
-                      id="rememberMe"
-                      type="checkbox"
-                      className="login-checkbox"
-                      checked={rememberMe}
-                      onChange={e => setRememberMe(e.target.checked)}
-                      disabled={isLocked || loading}
-                    />
-                    <span className="login-checkbox-custom" />
-                    <span>Remember Me</span>
-                  </label>
-                  <Link href="/change-password" className="login-forgot-link">
-                    Forgot Password?
-                  </Link>
-                </div>
-
                 {/* Submit */}
                 <button
                   type="submit"
@@ -426,14 +407,6 @@ export default function LoginPage() {
                   )}
                 </button>
               </form>
-
-              <div className="login-notice">
-                <Shield size={13} style={{ flexShrink: 0, color: 'var(--info)' }} />
-                <span>
-                  Access restricted to authorised Nib Bank personnel. All attempts are
-                  monitored and logged for compliance.
-                </span>
-              </div>
             </>
           )}
 

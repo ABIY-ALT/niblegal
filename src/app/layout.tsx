@@ -4,7 +4,7 @@ import Providers from '@/components/Providers';
 import '@/index.css';
 
 export const metadata: Metadata = {
-  title: 'Nib Bank — Legal Department Automation',
+  title: 'Nib Legal',
   description: 'Contract Management System (CMS) and Legal Advisory & Human Development (LAHD) platform for Nib International Bank S.C.',
 };
 

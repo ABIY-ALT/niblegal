@@ -2,12 +2,12 @@
 
 import Link from 'next/link';
 import {
-  Users, Clock, FileText, Gavel, AlertTriangle, Calendar,
-  CheckCircle, XCircle, BookOpen, TrendingUp, ArrowRight,
+  Users, Clock, FileText, Gavel, AlertTriangle,
+  CheckCircle, BookOpen, TrendingUp, ArrowRight, ShieldCheck,
 } from 'lucide-react';
 import {
   ReportShell, KPI, BarList, Donut, TrendChart, ReportPanel, ReportEmpty,
-  useReportSummary,
+  useReportSummary, fmt,
 } from '@/components/reports/ReportKit';
 import { statusLabel as contractStatusLabel } from '@/lib/contractStatus';
 
@@ -18,13 +18,65 @@ const ADVISORY_STATUS_LABELS: Record<string, string> = {
   REJECTED: 'Rejected', ESCALATED: 'Escalated',
 };
 
+type Severity = 'critical' | 'warning' | 'good';
+
+/**
+ * Exception band.
+ *
+ * Reads as a management "what needs attention" line rather than more tiles.
+ * Every item ships an icon and a written severity word — the colour repeats the
+ * severity, it never carries it alone.
+ */
+function ExceptionBar({ items }: { items: { severity: Severity; label: string; count: number; href: string }[] }) {
+  const live = items.filter((i) => i.count > 0);
+  if (live.length === 0) {
+    return (
+      <div className="exec-exceptions is-clear">
+        <ShieldCheck size={16} />
+        <span><strong>All clear.</strong> No overdue requests, expiring contracts or approvals waiting.</span>
+      </div>
+    );
+  }
+  return (
+    <div className="exec-exceptions">
+      <span className="exec-exceptions-title"><AlertTriangle size={15} /> Needs attention</span>
+      <div className="exec-exceptions-items">
+        {live.map((i) => (
+          <Link key={i.label} href={i.href} className={`exec-exception sev-${i.severity}`}>
+            <span className="exec-exception-count">{fmt(i.count)}</span>
+            <span className="exec-exception-label">
+              {i.label}
+              <span className="exec-exception-sev">{i.severity === 'critical' ? 'Critical' : 'Warning'}</span>
+            </span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StatRow({ label, value, tone }: { label: string; value: string | number; tone?: 'danger' }) {
+  return (
+    <div className="enterprise-detail-row">
+      <span className="enterprise-detail-label">{label}</span>
+      <span className="enterprise-detail-value" style={tone === 'danger' ? { color: 'var(--danger)' } : undefined}>
+        {typeof value === 'number' ? fmt(value) : value}
+      </span>
+    </div>
+  );
+}
+
 export default function ExecutiveDashboard() {
   const { data, isLoading, isError, refetch } = useReportSummary();
+
+  const asOf = new Date().toLocaleDateString('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric',
+  });
 
   return (
     <ReportShell
       title="Executive Dashboard"
-      subtitle="Cross-module view of legal operations for management reporting."
+      subtitle={`Cross-module view of legal operations for management reporting · as at ${asOf}`}
       loading={isLoading}
       error={isError}
       onRetry={() => refetch()}
@@ -39,39 +91,39 @@ export default function ExecutiveDashboard() {
         const a = data.advisory;
 
         const contractPie = Object.entries(c.byStatus)
-          .map(([k, v]) => ({ label: contractStatusLabel(k), value: v }))
-          .filter((i) => i.value > 0);
+          .map(([k, v]) => ({ label: contractStatusLabel(k), value: v }));
         const advisoryPie = Object.entries(a.byStatus)
-          .map(([k, v]) => ({ label: ADVISORY_STATUS_LABELS[k] ?? k, value: v }))
-          .filter((i) => i.value > 0);
+          .map(([k, v]) => ({ label: ADVISORY_STATUS_LABELS[k] ?? k, value: v }));
         const officerProductivity = data.officers.map((o) => ({
           label: o.name,
           value: o.contracts + o.advisory,
         }));
 
+        const slaTone = a.slaCompliance >= 90 ? 'success' : a.slaCompliance >= 75 ? 'warning' : 'danger';
+
         return (
           <>
-            {/* ── Primary KPIs ───────────────────────────────────────── */}
+            {/* ── Headline KPIs ──────────────────────────────────────── */}
             <div className="enterprise-kpi-grid">
-              <KPI title="Total Contracts" value={c.total} color="accent" icon={<FileText size={19} />} />
-              <KPI title="Active Contracts" value={c.active} color="success" icon={<CheckCircle size={19} />} />
-              <KPI title="Legal Requests" value={a.total} color="info" icon={<Gavel size={19} />} />
-              <KPI
-                title="SLA Compliance"
-                value={`${a.slaCompliance}%`}
-                color={a.slaCompliance >= 90 ? 'success' : a.slaCompliance >= 75 ? 'warning' : 'danger'}
-                icon={<Clock size={19} />}
-                hint={`${a.avgTurnaroundHours}h average turnaround`}
-              />
+              <KPI title="Total Contracts" value={c.total} color="accent" icon={<FileText size={19} />}
+                   hint={`${fmt(c.active)} currently active`} />
+              <KPI title="Legal Requests" value={a.total} color="info" icon={<Gavel size={19} />}
+                   hint={`${fmt(a.closed)} closed to date`} />
+              <KPI title="SLA Compliance" value={`${a.slaCompliance}%`} color={slaTone} icon={<Clock size={19} />}
+                   hint={`${a.avgTurnaroundHours}h average turnaround`} />
+              <KPI title="Knowledge Base" value={data.knowledge.total} color="muted" icon={<BookOpen size={19} />}
+                   hint={`${fmt(data.knowledge.published)} published`} />
             </div>
 
-            {/* ── Attention KPIs ─────────────────────────────────────── */}
-            <div className="enterprise-kpi-grid">
-              <KPI title="Pending Approvals" value={c.pendingApproval} color="warning" icon={<AlertTriangle size={19} />} />
-              <KPI title="Expiring Contracts" value={c.expiring} color="danger" icon={<Calendar size={19} />} />
-              <KPI title="Pending Requests" value={a.pending} color="warning" icon={<FileText size={19} />} />
-              <KPI title="Overdue Requests" value={a.overdue} color="danger" icon={<XCircle size={19} />} />
-            </div>
+            {/* ── Exceptions ─────────────────────────────────────────── */}
+            <ExceptionBar
+              items={[
+                { severity: 'critical', label: 'Overdue requests', count: a.overdue, href: '/advisory/list' },
+                { severity: 'critical', label: 'Expiring contracts', count: c.expiring, href: '/expiry' },
+                { severity: 'warning', label: 'Contracts awaiting approval', count: c.pendingApproval, href: '/contracts' },
+                { severity: 'warning', label: 'Requests pending', count: a.pending, href: '/advisory/list' },
+              ]}
+            />
 
             <div className="enterprise-layout">
               <div className="enterprise-main">
@@ -79,18 +131,19 @@ export default function ExecutiveDashboard() {
                   <TrendChart series={data.trends} />
                 </ReportPanel>
 
+                <div className="exec-split">
+                  <ReportPanel title="Contracts by Status" icon={<FileText />}>
+                    <Donut data={contractPie} />
+                  </ReportPanel>
+                  <ReportPanel title="Advisory by Status" icon={<Gavel />}>
+                    <Donut data={advisoryPie} />
+                  </ReportPanel>
+                </div>
+
                 <ReportPanel title="Officer Productivity" icon={<Users />}>
                   {officerProductivity.length === 0
                     ? <ReportEmpty message="No assignments yet." />
                     : <BarList data={officerProductivity} />}
-                </ReportPanel>
-
-                <ReportPanel title="Contracts by Status" icon={<FileText />}>
-                  <Donut data={contractPie} />
-                </ReportPanel>
-
-                <ReportPanel title="Advisory by Status" icon={<Gavel />}>
-                  <Donut data={advisoryPie} />
                 </ReportPanel>
               </div>
 
@@ -98,64 +151,31 @@ export default function ExecutiveDashboard() {
                 <div className="enterprise-side-card">
                   <div className="enterprise-side-title"><Clock /> Advisory SLA</div>
                   <div className="enterprise-detail-list">
-                    <div className="enterprise-detail-row">
-                      <span className="enterprise-detail-label">Compliance</span>
-                      <span className="enterprise-detail-value">{a.slaCompliance}%</span>
-                    </div>
-                    <div className="enterprise-detail-row">
-                      <span className="enterprise-detail-label">Overdue</span>
-                      <span className="enterprise-detail-value" style={{ color: a.overdue > 0 ? 'var(--danger)' : undefined }}>
-                        {a.overdue}
-                      </span>
-                    </div>
-                    <div className="enterprise-detail-row">
-                      <span className="enterprise-detail-label">Avg turnaround</span>
-                      <span className="enterprise-detail-value">{a.avgTurnaroundHours}h</span>
-                    </div>
-                    <div className="enterprise-detail-row">
-                      <span className="enterprise-detail-label">Closed</span>
-                      <span className="enterprise-detail-value">{a.closed}</span>
-                    </div>
+                    <StatRow label="Compliance" value={`${a.slaCompliance}%`} />
+                    <StatRow label="Overdue" value={a.overdue} tone={a.overdue > 0 ? 'danger' : undefined} />
+                    <StatRow label="Breached" value={a.breached} tone={a.breached > 0 ? 'danger' : undefined} />
+                    <StatRow label="Avg turnaround" value={`${a.avgTurnaroundHours}h`} />
+                    <StatRow label="Closed" value={a.closed} />
                   </div>
                 </div>
 
                 <div className="enterprise-side-card">
                   <div className="enterprise-side-title"><FileText /> Contract Pipeline</div>
                   <div className="enterprise-detail-list">
-                    <div className="enterprise-detail-row">
-                      <span className="enterprise-detail-label">Draft</span>
-                      <span className="enterprise-detail-value">{c.draft}</span>
-                    </div>
-                    <div className="enterprise-detail-row">
-                      <span className="enterprise-detail-label">Under review</span>
-                      <span className="enterprise-detail-value">{c.underReview}</span>
-                    </div>
-                    <div className="enterprise-detail-row">
-                      <span className="enterprise-detail-label">Pending approval</span>
-                      <span className="enterprise-detail-value">{c.pendingApproval}</span>
-                    </div>
-                    <div className="enterprise-detail-row">
-                      <span className="enterprise-detail-label">Executed</span>
-                      <span className="enterprise-detail-value">{c.executed}</span>
-                    </div>
-                    <div className="enterprise-detail-row">
-                      <span className="enterprise-detail-label">Expired</span>
-                      <span className="enterprise-detail-value">{c.expired}</span>
-                    </div>
+                    <StatRow label="Draft" value={c.draft} />
+                    <StatRow label="Under review" value={c.underReview} />
+                    <StatRow label="Pending approval" value={c.pendingApproval} />
+                    <StatRow label="Executed" value={c.executed} />
+                    <StatRow label="Expired" value={c.expired} />
                   </div>
                 </div>
 
                 <div className="enterprise-side-card">
-                  <div className="enterprise-side-title"><BookOpen /> Knowledge Base</div>
+                  <div className="enterprise-side-title"><CheckCircle /> Position</div>
                   <div className="enterprise-detail-list">
-                    <div className="enterprise-detail-row">
-                      <span className="enterprise-detail-label">Total documents</span>
-                      <span className="enterprise-detail-value">{data.knowledge.total}</span>
-                    </div>
-                    <div className="enterprise-detail-row">
-                      <span className="enterprise-detail-label">Published</span>
-                      <span className="enterprise-detail-value">{data.knowledge.published}</span>
-                    </div>
+                    <StatRow label="Active contracts" value={c.active} />
+                    <StatRow label="Expiring soon" value={c.expiring} tone={c.expiring > 0 ? 'danger' : undefined} />
+                    <StatRow label="Requests pending" value={a.pending} />
                   </div>
                 </div>
               </div>

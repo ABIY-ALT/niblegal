@@ -34,7 +34,12 @@ function ChartTooltip({ active, payload, label }: any) {
   );
 }
 
-const CATEGORY_PALETTE = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#EAB308', '#ef4444', '#84cc16'];
+/* "Contracts by category" is a single measure, so every bar takes slot 1 —
+   painting each category its own hue double-encodes bar length as colour and
+   implies categories that have no relationship to each other. Identity here is
+   carried by the axis label. */
+const SERIES_1 = 'var(--chart-1)';
+const SERIES_2 = 'var(--chart-2)';
 const titleCase = (s: string) => s.replace(/_/g, ' ').replace(/\w\S*/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
 
 const NON_TERMINAL_CONTRACT = ['ACTIVE', 'EXECUTED', 'EXPIRED', 'TERMINATED'];
@@ -241,10 +246,10 @@ export default function DashboardPage() {
   const pendingApprovals = (summary?.contracts.pendingApproval ?? 0) + (summary?.advisory.byStatus?.PENDING_APPROVAL ?? 0);
   const slaBreached = summary?.advisory.breached ?? 0;
 
-  const contractsByCategory = (summary?.contracts.byCategory ?? []).map((c, i) => ({
+  const contractsByCategory = (summary?.contracts.byCategory ?? []).map((c) => ({
     label: titleCase(c.category).split(' ')[0],
     value: c.count,
-    color: CATEGORY_PALETTE[i % CATEGORY_PALETTE.length],
+    color: SERIES_1,
   }));
 
   const monthlyData = (summary?.trends ?? []).map((t) => ({ month: t.month, Contracts: t.contracts, Advisory: t.advisory }));
@@ -413,12 +418,12 @@ export default function DashboardPage() {
                     <AreaChart data={monthlyData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
                       <defs>
                         <linearGradient id="gradContracts" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#EAB308" stopOpacity={0.35} />
-                          <stop offset="100%" stopColor="#EAB308" stopOpacity={0} />
+                          <stop offset="0%" stopColor={SERIES_1} stopOpacity={0.28} />
+                          <stop offset="100%" stopColor={SERIES_1} stopOpacity={0} />
                         </linearGradient>
                         <linearGradient id="gradAdvisory" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#2563EB" stopOpacity={0.30} />
-                          <stop offset="100%" stopColor="#2563EB" stopOpacity={0} />
+                          <stop offset="0%" stopColor={SERIES_2} stopOpacity={0.24} />
+                          <stop offset="100%" stopColor={SERIES_2} stopOpacity={0} />
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -426,8 +431,8 @@ export default function DashboardPage() {
                       <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickLine={false} axisLine={false} allowDecimals={false} width={40} />
                       <Tooltip content={<ChartTooltip />} />
                       <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 600, paddingTop: 8 }} />
-                      <Area type="monotone" dataKey="Contracts" stroke="#EAB308" strokeWidth={2.5} fill="url(#gradContracts)" dot={{ r: 3, fill: '#EAB308', strokeWidth: 0 }} activeDot={{ r: 5 }} />
-                      <Area type="monotone" dataKey="Advisory" stroke="#2563EB" strokeWidth={2.5} fill="url(#gradAdvisory)" dot={{ r: 3, fill: '#2563EB', strokeWidth: 0 }} activeDot={{ r: 5 }} />
+                      <Area type="monotone" dataKey="Contracts" stroke={SERIES_1} strokeWidth={2} fill="url(#gradContracts)" dot={false} activeDot={{ r: 4.5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+                      <Area type="monotone" dataKey="Advisory" stroke={SERIES_2} strokeWidth={2} fill="url(#gradAdvisory)" dot={false} activeDot={{ r: 4.5, strokeWidth: 2, stroke: 'var(--surface)' }} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>

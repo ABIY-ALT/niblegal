@@ -82,6 +82,25 @@
   --gold: var(--primary);
   --gold-light: #FBBF24;
   --info: #2563EB;
+  /* ─── Chart palette (categorical) ───────────────────────────────────────
+     Fixed slot order — assigned by identity, never by rank, and never cycled
+     past slot 6 (the 7th+ category folds into --chart-other). Validated as a
+     set against this theme's #FFFFFF surface: lightness band, chroma floor,
+     adjacent-pair CVD separation (worst ΔE 9.1 protan) and normal-vision
+     separation (worst ΔE 19.6) all pass. Aqua, yellow and magenta sit below
+     3:1 on white, so charts using them must carry visible values or the table
+     view — see ChartPanel's table toggle. Re-run the validator before editing
+     any of these hexes. */
+  --chart-1: #2A78D6;
+  --chart-2: #EB6834;
+  --chart-3: #1BAF7A;
+  --chart-4: #EDA100;
+  --chart-5: #E87BA4;
+  --chart-6: #008300;
+  --chart-other: #78716C;
+  --chart-grid: #EAE7E0;
+  --chart-axis: #C9C4BA;
+
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius: 14px;
@@ -133,6 +152,20 @@
   --gold: var(--primary);
   --gold-light: #FBBF24;
   --info: #60A5FA;
+
+  /* Dark steps of the SAME eight hues — re-stepped for the dark surface, not an
+     automatic flip of the light values. Validated against #1A1815: every check
+     passes, including 3:1 contrast for all six slots. */
+  --chart-1: #3987E5;
+  --chart-2: #D95926;
+  --chart-3: #199E70;
+  --chart-4: #C98500;
+  --chart-5: #D55181;
+  --chart-6: #008300;
+  --chart-other: #8A8078;
+  --chart-grid: #2A2723;
+  --chart-axis: #3D3833;
+
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius: 14px;
@@ -768,43 +801,55 @@ select.form-control { cursor: pointer; }
 .login-page-hero {
   min-height: 100vh;
   display: flex;
-  align-items: center;
+  /* flex-start + margin-block:auto on the wrapper (not align-items:center) so a
+     tall card — MFA step with an error banner — scrolls instead of having its
+     top clipped out of reach. */
+  align-items: flex-start;
   justify-content: center;
+  overflow-y: auto;
 }
 
-/* Full-bleed background image. Two layers: login-hero.jpg on top, with
-   legal-hero.jpg beneath as a fallback if the first file is absent. */
+/* Full-bleed NIB "Legal Department Automation System" brand artwork.
+   Plain url() first as the fallback, then image-set() so browsers that support
+   it take the WebP (168 KB vs 374 KB for the JPEG). */
 .login-hero-bg {
   position: fixed;
   inset: 0;
   z-index: 0;
-  background-image: url('/login-hero.jpg'), url('/legal-hero.jpg');
-  background-position: center center, center center;
-  background-size: cover, cover;
-  background-repeat: no-repeat, no-repeat;
-  filter: brightness(1.12) saturate(1.05);
+  background-image: url('/login-hero.jpg');
+  background-image: image-set(
+    url('/login-hero.webp') type('image/webp'),
+    url('/login-hero.jpg') type('image/jpeg')
+  );
+  background-position: center center;
+  background-size: cover;
+  background-repeat: no-repeat;
 }
 
-/* Portrait viewports: bias left so the NIB crest and gavel stay in frame
-   rather than being cropped to the empty right-hand wall. */
+/* Portrait viewports: the artwork is 3:2, so `cover` crops hard from the sides.
+   Bias left to hold the NIB crest and headline rather than the empty gold wall. */
 @media (max-width: 900px) {
-  .login-hero-bg { background-position: 34% center, center center; }
+  .login-hero-bg { background-position: 32% center; }
 }
 
-/* Gradient overlay: lightened tint + warm glow behind the card */
+/* Warm scrim tuned for the light cream/gold artwork. A cool navy wash (what
+   this used to be, for a dark photo) turns the gold muddy grey — so this stays
+   in the brand's brown/amber range: a soft espresso vignette pooled behind the
+   centered card to seat it, easing off to a light veil at the edges so the
+   crest, headline and gavel still read. */
 .login-hero-overlay {
   position: fixed;
   inset: 0;
   z-index: 1;
   background:
-    radial-gradient(760px 640px at 78% 48%, rgba(120, 170, 255, 0.10), transparent 72%),
+    radial-gradient(760px 620px at 50% 50%, rgba(46, 29, 10, 0.50), transparent 76%),
     linear-gradient(
-      110deg,
-      rgba(10, 16, 34, 0.34) 0%,
-      rgba(12, 18, 36, 0.26) 48%,
-      rgba(10, 16, 34, 0.46) 100%
+      165deg,
+      rgba(255, 250, 238, 0.14) 0%,
+      rgba(120, 84, 36, 0.12) 46%,
+      rgba(44, 28, 10, 0.30) 100%
     );
-  backdrop-filter: blur(1px);
+  backdrop-filter: blur(1.5px);
 }
 
 /* Centered column wrapper */
@@ -813,10 +858,11 @@ select.form-control { cursor: pointer; }
   z-index: 10;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 20px;
+  align-items: stretch;
+  gap: 16px;
   width: 100%;
-  max-width: 500px;
+  max-width: 430px;
+  margin-block: auto;
   padding: 32px 20px 28px;
 }
 
@@ -903,7 +949,10 @@ select.form-control { cursor: pointer; }
   align-items: center;
   gap: 8px;
   font-size: 11.5px;
-  color: rgba(255, 255, 255, 0.62);
+  color: rgba(255, 255, 255, 0.82);
+  /* Sits directly on the artwork, which is light cream in places — the shadow
+     keeps it readable wherever the crop lands it. */
+  text-shadow: 0 1px 4px rgba(30, 18, 4, 0.75);
   text-align: center;
   flex-wrap: wrap;
   justify-content: center;
@@ -911,17 +960,6 @@ select.form-control { cursor: pointer; }
 
 .login-hero-footer a { color: rgba(255, 206, 77, 0.92); text-decoration: none; }
 .login-hero-footer a:hover { color: #FFE39B; }
-
-/* ─── Secure Access variant: card anchored right over the hero artwork ───── */
-.login-hero-right { justify-content: flex-end; }
-
-.login-hero-wrapper-right {
-  margin-left: auto;
-  margin-right: clamp(16px, 6vw, 110px);
-  align-items: stretch;
-  max-width: 430px;
-  gap: 16px;
-}
 
 /* In-card brand lockup */
 .login-brand-lockup {
@@ -952,12 +990,19 @@ select.form-control { cursor: pointer; }
   font-size: 13.5px; color: rgba(255, 255, 255, 0.78); margin-top: 11px;
 }
 
-/* Slightly cooler, more transparent glass to match the artwork */
+/* Warm espresso glass, keyed to the gold artwork behind it. Deliberately dark
+   and fairly opaque: the background is a light, busy banner, so a pale card
+   would disappear into it — the dark body is what makes the white form text
+   legible over the gavel and hexagon detail. */
 .login-card-secure {
-  background: rgba(28, 42, 74, 0.42) !important;
-  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+  background: rgba(38, 24, 9, 0.72) !important;
+  border: 1px solid rgba(243, 189, 40, 0.36) !important;
   border-radius: 14px !important;
   padding: 34px 30px 30px !important;
+  box-shadow:
+    0 28px 70px rgba(30, 18, 4, 0.52),
+    0 0 0 1px rgba(255, 255, 255, 0.07),
+    inset 0 1px 0 rgba(255, 226, 150, 0.16) !important;
 }
 .login-card-secure .login-card-header { margin-bottom: 26px; }
 .login-card-secure .login-field { margin-bottom: 14px; }
@@ -970,40 +1015,34 @@ select.form-control { cursor: pointer; }
 }
 .login-card-secure .login-input-icon { left: 15px; }
 .login-card-secure .login-input:focus {
-  border-color: rgba(120, 175, 255, 0.85) !important;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.22) !important;
+  border-color: rgba(243, 189, 40, 0.85) !important;
+  box-shadow: 0 0 0 3px rgba(243, 189, 40, 0.22) !important;
 }
 
 /* Remember-me + forgot-password on one row */
-.login-meta-row {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 12px; margin: 6px 0 20px;
-}
-.login-meta-row .login-checkbox-label { font-size: 13px; }
-.login-meta-row .login-forgot-link { font-size: 13px; text-decoration: underline; }
+/* The remember-me / forgot-password row used to supply the gap above the
+   button; it is gone, so the button carries that spacing itself now. */
+.login-card-secure .login-btn-primary { margin-top: 10px; }
 
-/* Blue "Secure Sign In" action */
+/* Brown "Secure Sign In" action. Runs lighter than the espresso card behind it
+   (copper → saddle brown) so it still separates from the card body, with a warm
+   gold underline in place of the old blue one. */
 .login-btn-secure {
-  background: linear-gradient(180deg, #4E9BF2 0%, #2E7CE0 55%, #1F63C6 100%) !important;
+  background: linear-gradient(180deg, #C08040 0%, #8B4513 55%, #6A3410 100%) !important;
   color: #ffffff !important;
   text-transform: uppercase; letter-spacing: 1.5px; font-size: 13.5px;
   border-radius: 8px; padding: 14px 20px;
   position: relative; overflow: hidden;
-  box-shadow: 0 8px 26px rgba(37, 99, 235, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  box-shadow: 0 8px 26px rgba(90, 44, 12, 0.50), inset 0 1px 0 rgba(255, 224, 176, 0.30);
 }
 .login-btn-secure::after {
   content: ''; position: absolute; left: 14%; right: 14%; bottom: 0; height: 2px;
-  background: linear-gradient(90deg, transparent, #9AD8FF, transparent);
+  background: linear-gradient(90deg, transparent, #FFD48A, transparent);
   filter: blur(1px);
 }
 .login-btn-secure:hover:not(:disabled) {
   opacity: 1;
-  box-shadow: 0 10px 32px rgba(37, 99, 235, 0.58), inset 0 1px 0 rgba(255, 255, 255, 0.34);
-}
-
-@media (max-width: 900px) {
-  .login-hero-right { justify-content: center; }
-  .login-hero-wrapper-right { margin-right: auto; }
+  box-shadow: 0 10px 32px rgba(90, 44, 12, 0.66), inset 0 1px 0 rgba(255, 224, 176, 0.38);
 }
 
 /* ─── Enterprise Detail Workspace (advisory & contract detail pages) ─────── */
@@ -1323,33 +1362,154 @@ select.form-control { cursor: pointer; }
 .cm-legend-row:hover { background: var(--bg-card-hover); }
 .cm-legend-name { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); }
 .cm-legend-swatch { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
-.cm-legend-count { font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.cm-legend-count {
+  font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums;
+  display: flex; align-items: baseline; gap: 8px;
+}
+.cm-legend-pct { font-weight: 600; font-size: 11.5px; color: var(--text-muted); min-width: 32px; text-align: right; }
 
 /* ─── Reports kit ───────────────────────────────────────────────────────── */
+
+/* Chart / table switch. The table view is the WCAG-clean twin of every chart,
+   not an extra — see the note in ReportKit's VizFrame. */
+.rk-viz { display: flex; flex-direction: column; }
+.rk-viz-toolbar { display: flex; justify-content: flex-end; gap: 2px; margin: -4px 0 12px; }
+.rk-viz-tab {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: 7px; border: 1px solid transparent;
+  background: transparent; color: var(--text-muted);
+  font-family: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer;
+  transition: var(--transition);
+}
+.rk-viz-tab:hover { color: var(--text-primary); background: var(--bg-card-hover); }
+.rk-viz-tab.is-active {
+  background: var(--bg-input); border-color: var(--border);
+  color: var(--text-primary);
+}
+
+/* Data table twin */
+.rk-table-wrap { overflow-x: auto; }
+.rk-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.rk-table th, .rk-table td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border-light); }
+.rk-table thead th {
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-muted); border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.rk-table tbody th { font-weight: 600; color: var(--text-secondary); }
+.rk-table .num { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-primary); font-weight: 600; }
+.rk-table tbody tr:last-child th, .rk-table tbody tr:last-child td { border-bottom: none; }
+.rk-table tbody tr:hover { background: var(--bg-card-hover); }
+
+/* Themed chart tooltip */
+.rk-tooltip {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 9px 12px; box-shadow: var(--shadow-md);
+  font-size: 12px; min-width: 140px;
+}
+.rk-tooltip-head { font-weight: 700; color: var(--text-primary); margin-bottom: 6px; }
+.rk-tooltip-row { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); margin-top: 3px; }
+.rk-tooltip-row strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.rk-tooltip-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+.rk-tooltip-name { flex: 1; }
+
+/* Empty state */
+.rk-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 9px; padding: 34px 14px; text-align: center; color: var(--text-muted); font-size: 12.5px;
+}
+.rk-empty-icon {
+  width: 42px; height: 42px; display: flex; align-items: center; justify-content: center;
+  border-radius: 13px; background: var(--bg-input); border: 1px solid var(--border);
+}
+
+/* Ranked bars — one series, so one colour (slot 1) for every bar. */
 .rk-barlist { display: flex; flex-direction: column; gap: 11px; }
 .rk-barlist-row { display: flex; align-items: center; gap: 12px; }
 .rk-barlist-label {
   width: 150px; flex-shrink: 0; font-size: 12.5px; color: var(--text-secondary);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.rk-barlist-track { flex: 1; height: 18px; border-radius: 20px; background: var(--bg-input); overflow: hidden; min-width: 0; }
-.rk-barlist-fill { height: 100%; border-radius: 20px; transition: width 0.4s ease; }
+.rk-barlist-track { flex: 1; height: 14px; border-radius: 4px; background: var(--bg-input); min-width: 0; }
+.rk-barlist-fill {
+  height: 100%; border-radius: 4px; background: var(--chart-1);
+  transition: width 0.4s ease; min-width: 3px;
+}
 .rk-barlist-value {
   width: 54px; flex-shrink: 0; text-align: right;
   font-size: 12.5px; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums;
 }
 
 .rk-donut { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
-.rk-donut-svg { width: 140px; height: 140px; flex-shrink: 0; }
+.rk-donut-figure { position: relative; width: 168px; height: 168px; flex-shrink: 0; }
+.rk-donut-center {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 1px; pointer-events: none;
+}
+/* Proportional figures on the hero number — tabular-nums makes large digits
+   look loose. */
+.rk-donut-total { font-size: 26px; font-weight: 800; color: var(--text-primary); line-height: 1; }
+.rk-donut-total-label {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--text-muted);
+}
 
 .rk-legend-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
 .rk-legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
 
-.rk-trend { display: flex; align-items: flex-end; gap: 14px; height: 190px; }
-.rk-trend-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 7px; min-width: 0; }
-.rk-trend-bars { display: flex; align-items: flex-end; justify-content: center; gap: 4px; height: 160px; width: 100%; }
-.rk-trend-bar { width: 12px; border-radius: 3px 3px 0 0; transition: height 0.4s ease; }
-.rk-trend-label { font-size: 11.5px; color: var(--text-muted); }
+/* Height includes the x-axis band so the card never grows a nested scrollbar. */
+.rk-trend { width: 100%; height: 230px; }
+
+/* ─── Executive dashboard ───────────────────────────────────────────────── */
+
+/* Two panels side by side inside the main column, collapsing on narrow screens. */
+.exec-split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+@media (max-width: 1100px) { .exec-split { grid-template-columns: minmax(0, 1fr); } }
+
+/* Exception band. Severity is written out and iconised — the colour repeats it,
+   it never carries it alone. */
+.exec-exceptions {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 14px 18px; box-shadow: var(--shadow-xs);
+}
+.exec-exceptions-title {
+  display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
+  font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+.exec-exceptions-title svg { color: var(--warning); }
+.exec-exceptions-items { display: flex; gap: 10px; flex-wrap: wrap; flex: 1; min-width: 0; }
+
+.exec-exceptions.is-clear {
+  color: var(--text-secondary); font-size: 13px;
+  border-color: color-mix(in srgb, var(--success) 30%, var(--border));
+  background: color-mix(in srgb, var(--success) 5%, var(--surface));
+}
+.exec-exceptions.is-clear svg { color: var(--success); flex-shrink: 0; }
+.exec-exceptions.is-clear strong { color: var(--text-primary); }
+
+.exec-exception {
+  display: flex; align-items: center; gap: 11px;
+  padding: 9px 14px 9px 12px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); border-left-width: 3px;
+  background: var(--bg-input); text-decoration: none; transition: var(--transition);
+  min-width: 0;
+}
+.exec-exception:hover { background: var(--surface); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
+.exec-exception-count {
+  font-size: 20px; font-weight: 800; color: var(--text-primary); line-height: 1; flex-shrink: 0;
+}
+.exec-exception-label {
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+  font-size: 12.5px; font-weight: 600; color: var(--text-secondary);
+}
+.exec-exception-sev {
+  font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+}
+.exec-exception.sev-critical { border-left-color: var(--danger); }
+.exec-exception.sev-critical .exec-exception-sev { color: var(--danger); }
+.exec-exception.sev-warning { border-left-color: var(--warning); }
+.exec-exception.sev-warning .exec-exception-sev { color: var(--warning); }
 
 /* Quick-report launcher tiles on the reports hub */
 .rk-launch-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
